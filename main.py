@@ -575,8 +575,6 @@ async def run_warrior_userbot():
                     ]
                 )
 
-    # باقي الـ callbacks... [نفس الكود من V8]
-    
     @control_bot.on(events.CallbackQuery(data=b"add_account"))
     async def add_account(event):
         login_state[event.sender_id] = {'step': 'phone'}
@@ -621,7 +619,13 @@ async def run_warrior_userbot():
                 save_db(db)
 
                 await temp_client.disconnect()
-                del login_state[event.sender                await event.reply(
+                del login_state[event.sender_id]
+
+                success = await load_userbot_client()
+                if success:
+                    await setup_userbot_handlers()
+
+                                await event.reply(
                     f"✅ **تم إضافة الحساب بنجاح**\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n\n"
                     f"👤 **الاسم:** {me.first_name}\n"
@@ -633,11 +637,6 @@ async def run_warrior_userbot():
                     f"روح أي جروب واكتب `.Azef @username`\n\n"
                     f"**البوت شغال دلوقتي من غير Restart** ✅"
                 )
-
-                # حمل اليوزربوت تلقائي
-                success = await load_userbot_client()
-                if success:
-                    await setup_userbot_handlers()
 
             except SessionPasswordNeededError:
                 state['step'] = 'password'
