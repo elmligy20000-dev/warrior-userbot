@@ -92,7 +92,7 @@ def load_db():
         except:
             pass
     return {
-        'owner_id': None, # هيتعرف تلقائي لما تضيف الحساب
+        'owner_id': None,
         'session': None,
         'all_roasts': ROASTS,
         'roast_counts': {},
@@ -127,7 +127,6 @@ def check_cooldown(user_id):
     return True, 0
 
 def check_subscription(db, user_id):
-    # المالك يتعرف من الداتا بيز
     if db.get('owner_id') and user_id == db['owner_id']:
         return True, "مالك البوت"
 
@@ -147,7 +146,6 @@ def check_subscription(db, user_id):
     return True, f"{days_left} يوم متبقي"
 
 async def load_userbot_client():
-    """يحمل اليوزربوت تلقائي بعد إضافة الحساب"""
     global client, db
     if db.get('session'):
         try:
@@ -157,7 +155,6 @@ async def load_userbot_client():
             await client.connect()
             if await client.is_user_authorized():
                 me = await client.get_me()
-                # لو مفيش owner_id لسه، خليه ID الحساب المضاف
                 if not db.get('owner_id'):
                     db['owner_id'] = me.id
                     save_db(db)
@@ -176,29 +173,12 @@ async def load_userbot_client():
     return False
 
 async def setup_userbot_handlers():
-    """يسجل كل أوامر اليوزربوت"""
     global client, db
     
     if not client or not await client.is_user_authorized():
         return
 
-    # احذف كل الـ handlers القديمة
-    client.remove_event_handler(roast_user)
-    client.remove_event_handler(roast_user_mention)
-    client.remove_event_handler(roast_all)
-    client.remove_event_handler(roast_spam)
-    client.remove_event_handler(roast_random)
-    client.remove_event_handler(roast_top)
-    client.remove_event_handler(roast_list)
-    client.remove_event_handler(add_roast)
-    client.remove_event_handler(login_cmd)
-    client.remove_event_handler(logout_cmd)
-    client.remove_event_handler(discount_cmd)
-    client.remove_event_handler(codes_cmd)
-    client.remove_event_handler(activate_cmd)
-    client.remove_event_handler(start_cmd)
-
-    @client.on(events.NewMessage(pattern='\.Azef$', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'\.Azef$', outgoing=True))
     async def roast_user(event):
         sender_id = event.sender_id
         is_subscribed, sub_msg = check_subscription(db, sender_id)
@@ -222,7 +202,7 @@ async def setup_userbot_handlers():
         save_db(db)
         asyncio.create_task(delete_after_delay(client, msg, DELETE_AFTER))
 
-    @client.on(events.NewMessage(pattern='\.Azef @', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'\.Azef @', outgoing=True))
     async def roast_user_mention(event):
         sender_id = event.sender_id
         is_subscribed, sub_msg = check_subscription(db, sender_id)
@@ -247,7 +227,7 @@ async def setup_userbot_handlers():
         except:
             await client.send_message(event.chat_id, "❌ معرفتش ألاقي اليوزر ده")
 
-    @client.on(events.NewMessage(pattern='\.Azef_all', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'\.Azef_all', outgoing=True))
     async def roast_all(event):
         sender_id = event.sender_id
         is_subscribed, sub_msg = check_subscription(db, sender_id)
@@ -276,7 +256,7 @@ async def setup_userbot_handlers():
             await asyncio.sleep(1)
         save_db(db)
 
-    @client.on(events.NewMessage(pattern='\.Azef_spam', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'\.Azef_spam', outgoing=True))
     async def roast_spam(event):
         sender_id = event.sender_id
         is_subscribed, sub_msg = check_subscription(db, sender_id)
@@ -303,7 +283,7 @@ async def setup_userbot_handlers():
         except:
             await client.send_message(event.chat_id, "❌ معرفتش ألاقي اليوزر ده")
 
-    @client.on(events.NewMessage(pattern='\.Azef_rand', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'\.Azef_rand', outgoing=True))
     async def roast_random(event):
         sender_id = event.sender_id
         is_subscribed, sub_msg = check_subscription(db, sender_id)
@@ -330,7 +310,7 @@ async def setup_userbot_handlers():
         save_db(db)
         asyncio.create_task(delete_after_delay(client, msg, DELETE_AFTER))
 
-    @client.on(events.NewMessage(pattern='\.Azef_top', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'\.Azef_top', outgoing=True))
     async def roast_top(event):
         sender_id = event.sender_id
         is_subscribed, sub_msg = check_subscription(db, sender_id)
@@ -351,7 +331,7 @@ async def setup_userbot_handlers():
         top_msg = await client.send_message(event.chat_id, msg)
         asyncio.create_task(delete_after_delay(client, top_msg, 20))
 
-    @client.on(events.NewMessage(pattern='\.Azef_list', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'\.Azef_list', outgoing=True))
     async def roast_list(event):
         sender_id = event.sender_id
         is_subscribed, sub_msg = check_subscription(db, sender_id)
@@ -360,7 +340,7 @@ async def setup_userbot_handlers():
             return
         await event.edit(f"📊 **عدد التحفيلات:** {len(ROASTS)}\n⚔️ **إجمالي:** {db['stats']['total_roasts']}")
 
-    @client.on(events.NewMessage(pattern='\.add_Azef', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'\.add_Azef', outgoing=True))
     async def add_roast(event):
         sender_id = event.sender_id
         is_subscribed, sub_msg = check_subscription(db, sender_id)
@@ -379,11 +359,11 @@ async def setup_userbot_handlers():
         save_db(db)
         await event.edit(f"✅ ضفت التحفيلة\nالعدد دلوقتي: {len(ROASTS)}")
 
-    @client.on(events.NewMessage(pattern='\.login', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'\.login', outgoing=True))
     async def login_cmd(event):
         await event.edit("✅ **الحساب متصل بالفعل**\n\nاستخدم `.logout` لتسجيل الخروج")
 
-    @client.on(events.NewMessage(pattern='\.logout', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'\.logout', outgoing=True))
     async def logout_cmd(event):
         if event.sender_id!= db.get('owner_id'):
             return await event.edit("❌ **الأمر ده للمالك بس**")
@@ -396,7 +376,7 @@ async def setup_userbot_handlers():
         client = None
         await client.send_message('me', "🔐 **تم تسجيل الخروج**\n\nالحساب اتفصل من البوت\n\nروح لبوت التحكم عشان تضيف حساب جديد")
 
-    @client.on(events.NewMessage(pattern='\.discount', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'\.discount', outgoing=True))
     async def discount_cmd(event):
         parts = event.text.split(' ', 1)
         if len(parts) < 2:
@@ -420,7 +400,7 @@ async def setup_userbot_handlers():
         else:
             await event.edit(f"✅ **كود خصم مفعل**\n\n🎟️ الكود: {code}\n💰 الخصم: {code_data['percent']}%\n💵 السعر: ${code_data['price']} بدل ${SUBSCRIPTION_PRICE}\n\nراسل @{DEVELOPER} للتفعيل")
 
-    @client.on(events.NewMessage(pattern='\.codes', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'\.codes', outgoing=True))
     async def codes_cmd(event):
         msg = "🎟️ **أكواد الخصم المتاحة**\n━━━━━━━━━━━━━━━━━━━━\n\n"
         for code, data in DISCOUNT_CODES.items():
@@ -432,7 +412,7 @@ async def setup_userbot_handlers():
         msg += f"━━━━━━━━━━━━━━━━━━━━\n💎 السعر: ${SUBSCRIPTION_PRICE}/شهر"
         await event.edit(msg)
 
-    @client.on(events.NewMessage(pattern='\.activate', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'\.activate', outgoing=True))
     async def activate_cmd(event):
         if event.sender_id!= db.get('owner_id'):
             return await event.edit("❌ **الأمر ده للمالك بس**")
@@ -470,7 +450,7 @@ async def setup_userbot_handlers():
         except:
             await event.edit("❌ معرفتش ألاقي اليوزر ده")
 
-    @client.on(events.NewMessage(pattern='\.start', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'\.start', outgoing=True))
     async def start_cmd(event):
         sender_id = event.sender_id
         is_subscribed, sub_msg = check_subscription(db, sender_id)
@@ -595,8 +575,8 @@ async def run_warrior_userbot():
                     ]
                 )
 
-    # باقي الـ CallbackQuery handlers... [نفس الكود من V8]
-
+    # باقي الـ callbacks... [نفس الكود من V8]
+    
     @control_bot.on(events.CallbackQuery(data=b"add_account"))
     async def add_account(event):
         login_state[event.sender_id] = {'step': 'phone'}
@@ -619,7 +599,8 @@ async def run_warrior_userbot():
                 return await event.reply("❌ لازم الرقم يبدأ بـ +\nمثال: +201234567890")
             try:
                 temp_client = TelegramClient(StringSession(), API_ID, API_HASH)
-                                await temp_client.send_code_request(phone)
+                await temp_client.connect()
+                await temp_client.send_code_request(phone)
                 state['phone'] = phone
                 state['step'] = 'code'
                 state['client'] = temp_client
@@ -635,20 +616,12 @@ async def run_warrior_userbot():
                 session_str = temp_client.session.save()
                 me = await temp_client.get_me()
 
-                # احفظ الجلسة + خلي ده المالك تلقائي
                 db['session'] = session_str
                 db['owner_id'] = me.id
                 save_db(db)
 
                 await temp_client.disconnect()
-                del login_state[event.sender_id]
-
-                # حمل اليوزربوت تلقائي
-                success = await load_userbot_client()
-                if success:
-                    await setup_userbot_handlers()
-
-                await event.reply(
+                del login_state[event.sender                await event.reply(
                     f"✅ **تم إضافة الحساب بنجاح**\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n\n"
                     f"👤 **الاسم:** {me.first_name}\n"
@@ -660,6 +633,12 @@ async def run_warrior_userbot():
                     f"روح أي جروب واكتب `.Azef @username`\n\n"
                     f"**البوت شغال دلوقتي من غير Restart** ✅"
                 )
+
+                # حمل اليوزربوت تلقائي
+                success = await load_userbot_client()
+                if success:
+                    await setup_userbot_handlers()
+
             except SessionPasswordNeededError:
                 state['step'] = 'password'
                 await event.reply("🔒 **حسابك عليه تحقق بخطوتين**\n\nابعت كلمة السر بتاعت التحقق بخطوتين")
@@ -676,7 +655,6 @@ async def run_warrior_userbot():
                 session_str = temp_client.session.save()
                 me = await temp_client.get_me()
 
-                # احفظ الجلسة + خلي ده المالك تلقائي
                 db['session'] = session_str
                 db['owner_id'] = me.id
                 save_db(db)
@@ -684,7 +662,6 @@ async def run_warrior_userbot():
                 await temp_client.disconnect()
                 del login_state[event.sender_id]
 
-                # حمل اليوزربوت تلقائي
                 success = await load_userbot_client()
                 if success:
                     await setup_userbot_handlers()
@@ -1046,4 +1023,3 @@ async def run_warrior_userbot():
 
 if __name__ == '__main__':
     asyncio.run(run_warrior_userbot())
-               
