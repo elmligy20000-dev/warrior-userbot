@@ -624,8 +624,7 @@ async def run_warrior_userbot():
                 success = await load_userbot_client()
                 if success:
                     await setup_userbot_handlers()
-
-                                await event.reply(
+await event.reply(
                     f"✅ **تم إضافة الحساب بنجاح**\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n\n"
                     f"👤 **الاسم:** {me.first_name}\n"
