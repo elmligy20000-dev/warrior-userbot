@@ -544,7 +544,7 @@ async def run_warrior_userbot():
                     "━━━━━━━━━━━━━━━━━━━━\n"
                     "👨‍💻 **المبرمج:** @devazf",
                 )
-                    buttons=[
+                buttons=[
                         [Button.inline("📋 عرض الأوامر", b"user_commands")],
                         [Button.inline("🎟️ أكواد الخصم", b"show_codes")],
                         [Button.url("💬 راسل المبرمج", f"https://t.me/{DEVELOPER}")]
