@@ -1,5 +1,0 @@
-telethon==1.36.0
-pillow==10.4.0
-ffmpeg-python==0.2.0
-pymongo==4.8.0
-dnspython==2.6.1
