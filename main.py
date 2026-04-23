@@ -706,7 +706,7 @@ async def callbacks(event):
         await event.edit("⚙️ **الإعدادات**", buttons=settings_menu(uid))
         return
 
-        if data == b"admin":
+    if data == b"admin":
         if not is_admin(uid):
             return await event.answer("❌ للادمن فقط", alert=True)
         await event.edit("👑 **لوحة تحكم الأدمن**", buttons=admin_panel(uid))
