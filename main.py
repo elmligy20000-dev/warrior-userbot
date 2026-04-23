@@ -8,14 +8,16 @@ from telethon.sessions import StringSession
 from telethon.tl.types import Channel, Chat
 from telethon.errors import UserNotParticipantError, FloodWaitError, PhoneCodeInvalidError
 
-# --- الإعدادات الأساسية ---
-API_ID = 33595004
-API_HASH = 'cbd1066ed026997f2f4a7c4323b7bda7'
-BOT_TOKEN = '8676300768:AAFa3i3qwy0vsfa-NAOKWrBgyKWTxXYIjEs'
-ADMIN_ID = 154919127
-DEVELOPER_USERNAME = "devazf"
-MANDATORY_CHANNEL = "@vip6705"
+# --- الإعدادات الأساسية من المتغيرات ---
+API_ID = int(os.environ.get('API_ID', '33595004'))
+API_HASH = os.environ.get('API_HASH', 'cbd1066ed026997f2f4a7c4323b7bda7')
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8676300768:AAFa3i3qwy0vsfa-NAOKWrBgyKWTxXYIjEs')
+ADMIN_ID = int(os.environ.get('ADMIN_ID', '154919127'))
+DEVELOPER_USERNAME = os.environ.get('DEVELOPER_USERNAME', "devazf")
+MANDATORY_CHANNEL = os.environ.get('MANDATORY_CHANNEL', "@vip6705")
+HELP_PHOTO = os.environ.get('HELP_PHOTO', 'https://kommodo.ai/i/Ixum6fajzG8XTOUekxDi')
 DB_FILE = 'poster_data.json'
+MAX_ACCOUNTS = 5
 
 # --- أسعار الاشتراك ---
 PRICE_PACKAGES = {
@@ -36,22 +38,36 @@ PAYMENT_INFO = {
 def load_db():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            defaults = {
-                'welcome_enabled': True,
-                'welcome_text': '🌟 **أهلاً بيك في بوت النشر المطور**\n\n🚀 أسرع بوت نشر تلقائي على تليجرام\n⚡ نشر في مئات الجروبات بضغطة زر\n💎 مميزات احترافية\n\n👇 اختار من الأزرار تحت',
-                'welcome_photo': 'https://telegra.ph/file/8f8b4e1c4e8e8.jpg',
-                'trial_users': [],
-                'stats': {'total_sent': 0, 'start_time': str(datetime.now())},
-                'banned_groups': []
-            }
-            for key, val in defaults.items():
-                if key not in data:
-                    data[key] = val
-            return data
+            return json.load(f)
+    return {
+        'users': {},
+        'subs': {str(ADMIN_ID): '2099-01-01'},
+        'admins': [ADMIN_ID],
+        'auto_reply': True,
+        'auto_reply_pm': False,
+        'auto_reply_text': f'تفضل خاص @{DEVELOPER_USERNAME}',
+        'auto_reply_pm_text': f'أهلاً بيك 🌚\nانا بوت نشر تلقائي\nللتواصل @{DEVELOPER_USERNAME}',
+        'auto_reply_keywords': ['موجود', 'موجود؟', 'موجوده', 'فينك', 'وينك'],
+        'auto_reply_keywords_enabled': True,
+        'pending': {},
+        'welcomed': [],
+        'welcome_enabled': True,
+        'welcome_text': '🌟 **أهلاً بيك في بوت النشر المطور**\n\n🚀 أسرع بوت نشر تلقائي على تليجرام\n⚡ نشر في مئات الجروبات بضغطة زر\n💎 مميزات احترافية\n\n👇 اختار من الأزرار تحت',
+        'welcome_photo': 'https://telegra.ph/file/8f8b4e1c4e8e8.jpg',
+        'start_photo': 'https://telegra.ph/file/8f8b4e1c4e8e8.jpg',
+        'trial_users': [],
+        'stats': {'total_sent': 0, 'start_time': str(datetime.now())}
+    }
 
+def save_db():
+    with open(DB_FILE, 'w', encoding='utf-8') as f:
+        json.dump(db, f, ensure_ascii=False, indent=2)
+
+def get_account_template():
     return {
         'session': None,
+        'phone': None,
+        'username': None,
         'groups': {},
         'messages': ['', '', '', ''],
         'current_msg': 0,
@@ -59,27 +75,29 @@ def load_db():
         'sleep_time': 60,
         'msg_delay': 5,
         'send_all': False,
-        'subs': {str(ADMIN_ID): '2099-01-01'},
-        'admins': [ADMIN_ID],
-        'auto_reply': True,
-        'auto_reply_text': f'تفضل خاص @{DEVELOPER_USERNAME}',
-        'pending': {},
-        'welcomed': [],
-        'welcome_enabled': True,
-        'welcome_text': '🌟 **أهلاً بيك في بوت النشر المطور**\n\n🚀 أسرع بوت نشر تلقائي على تليجرام\n⚡ نشر في مئات الجروبات بضغطة زر\n💎 مميزات احترافية\n\n👇 اختار من الأزرار تحت',
-        'welcome_photo': 'https://telegra.ph/file/8f8b4e1c4e8e8e8e8.jpg',
-        'trial_users': [],
-        'stats': {'total_sent': 0, 'start_time': str(datetime.now())},
-        'banned_groups': []
+        'banned_groups': [],
+        'is_posting': False,
+        'name': 'حساب جديد'
     }
 
-def save_db():
-    with open(DB_FILE, 'w', encoding='utf-8') as f:
-        json.dump(db, f, ensure_ascii=False, indent=2)
+def get_user_data(uid):
+    uid = str(uid)
+    if uid not in db['users']:
+        db['users'][uid] = {
+            'accounts': {},
+            'active_account': None
+        }
+        save_db()
+    return db['users'][uid]
+
+def get_active_account(uid):
+    user = get_user_data(uid)
+    if not user['active_account'] or user['active_account'] not in user['accounts']:
+        return None
+    return user['accounts'][user['active_account']]
 
 db = load_db()
 bot = TelegramClient('PosterBot', API_ID, API_HASH)
-is_posting = False
 waiting_for = {}
 login_sessions = {}
 
@@ -122,9 +140,10 @@ def get_uptime():
 # --- القوائم ---
 def main_menu(uid):
     btns = [
-        [Button.inline("🔑 ربط حساب", b"login")],
+        [Button.inline("🔑 إدارة الحسابات", b"accounts")],
         [Button.inline("⚙️ الإعدادات", b"settings")],
-        [Button.inline("📊 الإحصائيات", b"stats")]
+        [Button.inline("📊 الإحصائيات", b"stats")],
+        [Button.inline("❓ المساعدة", b"help")]
     ]
 
     if not is_sub(uid) and str(uid) not in db['trial_users']:
@@ -139,30 +158,74 @@ def main_menu(uid):
     btns.append([Button.url("👨‍💻 المبرمج", f"https://t.me/{DEVELOPER_USERNAME}")])
     return btns
 
+def accounts_menu(uid):
+    user = get_user_data(uid)
+    btns = []
+
+    for acc_id, acc in user['accounts'].items():
+        status = "🟢" if acc['session'] else "🔴"
+        active = "✅" if user['active_account'] == acc_id else ""
+        name = acc.get('name', f'حساب {acc_id}')
+        phone = acc.get('phone', 'غير مربوط')
+        btns.append([Button.inline(f"{active} {status} {name} - {phone}", f"acc_{acc_id}".encode())])
+
+    if len(user['accounts']) < MAX_ACCOUNTS:
+        btns.append([Button.inline("➕ إضافة حساب جديد", b"add_account")])
+
+    btns.append([Button.inline("🔙 رجوع", b"back")])
+    return btns
+
+def account_control(uid, acc_id):
+    acc = get_user_data(uid)['accounts'][acc_id]
+    status = "🟢 مربوط" if acc['session'] else "🔴 غير مربوط"
+    posting = "🔴 إيقاف النشر" if acc['is_posting'] else "🟢 بدء النشر"
+
+    return [
+        [Button.inline(status, b"none")],
+        [Button.inline(f"📝 الاسم: {acc['name']}", b"none")],
+        [Button.inline("✏️ تغيير الاسم", f"rename_{acc_id}".encode())],
+        [Button.inline("🔑 ربط الحساب", f"login_{acc_id}".encode()), Button.inline("🗑️ حذف الحساب", f"del_acc_{acc_id}".encode())],
+        [Button.inline(posting, f"toggle_post_{acc_id}".encode())],
+        [Button.inline("🔙 رجوع", b"accounts")]
+    ]
+
 def settings_menu(uid):
-    status = "🟢 مربوط" if db['session'] else "🔴 غير مربوط"
-    mode = "📤 الكل" if db['send_all'] else "🔄 تدوير"
-    reply = "✅ مفعل" if db['auto_reply'] else "❌ معطل"
+    acc = get_active_account(uid)
+    if not acc:
+        return [[Button.inline("❌ اختار حساب أول", b"accounts")], [Button.inline("🔙 رجوع", b"back")]]
+
+    status = "🟢 مربوط" if acc['session'] else "🔴 غير مربوط"
+    mode = "📤 الكل" if acc['send_all'] else "🔄 تدوير"
+    reply_group = "✅ مفعل" if db['auto_reply'] else "❌ معطل"
+    reply_pm = "✅ مفعل" if db['auto_reply_pm'] else "❌ معطل"
+    keywords = "✅ مفعل" if db['auto_reply_keywords_enabled'] else "❌ معطل"
     welcome = "✅ مفعل" if db['welcome_enabled'] else "❌ معطل"
 
     btns = [
-        [Button.inline(status, b"none")],
-        [Button.inline(f"👥 الجروبات: {len(db['groups'])}", b"show_groups")],
+        [Button.inline(f"📱 {acc['name']} - {status}", b"accounts")],
+        [Button.inline(f"👥 الجروبات: {len(acc['groups'])}", b"show_groups")],
         [Button.inline("📥 جلب تلقائي", b"fetch"), Button.inline("➕ إضافة جروب", b"add_group")],
         [Button.inline("🗑️ حذف جروب", b"delete_group"), Button.inline("🚫 الجروبات المحظورة", b"banned")],
-        [Button.inline(f"📩 رسالة 1 ({db['msg_stats'][0]})", b"msg_0"), Button.inline(f"📩 رسالة 2 ({db['msg_stats'][1]})", b"msg_1")],
-        [Button.inline(f"📩 رسالة 3 ({db['msg_stats'][2]})", b"msg_2"), Button.inline(f"📩 رسالة 4 ({db['msg_stats'][3]})", b"msg_3")],
-        [Button.inline(f"⏱️ وقت الجروب: {db['sleep_time']}ث", b"set_sleep"), Button.inline(f"⏱️ وقت الرسالة: {db['msg_delay']}ث", b"set_delay")],
-        [Button.inline(mode, b"toggle_mode"), Button.inline(f"💬 الرد: {reply}", b"toggle_reply")],
+        [Button.inline(f"📩 رسالة 1 ({acc['msg_stats'][0]})", b"msg_0"), Button.inline(f"📩 رسالة 2 ({acc['msg_stats'][1]})", b"msg_1")],
+        [Button.inline(f"📩 رسالة 3 ({acc['msg_stats'][2]})", b"msg_2"), Button.inline(f"📩 رسالة 4 ({acc['msg_stats'][3]})", b"msg_3")],
+        [Button.inline(f"⏱️ وقت الجروب: {acc['sleep_time']}ث", b"set_sleep"), Button.inline(f"⏱️ وقت الرسالة: {acc['msg_delay']}ث", b"set_delay")],
+        [Button.inline(mode, b"toggle_mode")],
+        [Button.inline(f"💬 رد الجروب: {reply_group}", b"toggle_reply"), Button.inline(f"📩 رد الخاص: {reply_pm}", b"toggle_reply_pm")],
+        [Button.inline(f"🔤 رد الكلمات: {keywords}", b"toggle_keywords")],
     ]
 
     if is_admin(uid):
         btns.append([Button.inline(f"👋 الترحيب: {welcome}", b"toggle_welcome"), Button.inline("🖼️ صورة الترحيب", b"change_photo")])
-        btns.append([Button.inline("✏️ نص الترحيب", b"edit_welcome"), Button.inline("💬 نص الرد", b"edit_reply")])
+        btns.append([Button.inline("✏️ نص الترحيب", b"edit_welcome"), Button.inline("💬 نص رد الجروب", b"edit_reply")])
+        btns.append([Button.inline("📝 نص رد الخاص", b"edit_reply_pm"), Button.inline("🔤 كلمات الرد", b"edit_keywords")])
+        btns.append([Button.inline("🖼️ صورة /start", b"change_start_photo")])
 
-    btns.append([Button.inline("🔴 إيقاف النشر", b"stop"), Button.inline("🟢 بدء النشر", b"start")])
+    if acc['is_posting']:
+        btns.append([Button.inline("🔴 إيقاف النشر", b"stop")])
+    else:
+        btns.append([Button.inline("🟢 بدء النشر", b"start")])
+
     btns.append([Button.inline("🔙 رجوع", b"back")])
-
     return btns
 
 def admin_panel(uid):
@@ -181,7 +244,6 @@ def pay_menu():
     return btns
 
 def payment_methods(pkg_key):
-    pkg = PRICE_PACKAGES[pkg_key]
     return [
         [Button.inline(f"📱 فودافون كاش", f"method_vodafone_{pkg_key}".encode())],
         [Button.inline(f"💎 USDT TRC20", f"method_usdt_{pkg_key}".encode())],
@@ -194,6 +256,7 @@ def payment_methods(pkg_key):
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
     uid = event.sender_id
+    get_user_data(uid)
 
     if MANDATORY_CHANNEL and not is_admin(uid):
         try:
@@ -227,9 +290,84 @@ async def start(event):
             btns.append([Button.inline("🎁 تجربة مجانية 1 ساعة", b"free_trial")])
         btns.append([Button.inline("💳 اشترك الآن", b"pay_menu")])
         btns.append([Button.url("👨‍💻 المبرمج", f"https://t.me/{DEVELOPER_USERNAME}")])
-        return await event.reply(f"⚠️ **اشتراكك غير مفعل**\n🆔 ايديك: `{uid}`{get_time()}", buttons=btns)
 
-    await event.reply(f"🚀 **بوت النشر التلقائي المطور**{get_time()}", buttons=main_menu(uid))
+        caption = f"🚀 **بوت النشر التلقائي المطور**\n⚠️ **اشتراكك غير مفعل**\n🆔 ايديك: `{uid}`{get_time()}"
+
+        try:
+            await bot.send_file(uid, file=db['start_photo'], caption=caption, buttons=btns)
+        except:
+            await event.reply(caption, buttons=btns)
+        return
+
+    caption = f"🚀 **بوت النشر التلقائي المطور**\n\n✅ اشتراكك مفعل\n\n👇 اختار من الأزرار تحت{get_time()}"
+
+    try:
+        await bot.send_file(uid, file=db['start_photo'], caption=caption, buttons=main_menu(uid))
+    except:
+        await event.reply(caption, buttons=main_menu(uid))
+
+@bot.on(events.NewMessage(pattern='/help'))
+async def help_command(event):
+    uid = event.sender_id
+    get_user_data(uid)
+
+    if is_admin(uid):
+        help_text = f"""
+🚀 **أوامر بوت النشر المطور**
+
+**👤 أوامر المستخدمين:**
+/start - القائمة الرئيسية
+/help - عرض المساعدة
+
+**👑 أوامر الأدمن:**
+/activate user_id package_key - تفعيل اشتراك
+مثال: `/activate 123456789 7_days`
+
+**⚙️ المميزات:**
+- 🔑 5 حسابات لكل مستخدم
+- 📥 جلب تلقائي لكل الجروبات
+- ➕ إضافة/حذف جروبات يدوي
+- 📩 4 رسائل مختلفة لكل حساب
+- 🔄 وضع التدوير أو نشر الكل
+- ⏱️ تحكم كامل في الأوقات
+- 💬 رد تلقائي على المنشن والكلمات
+- 📩 رد تلقائي في الخاص
+- 🎁 تجربة مجانية ساعة
+- 💳 نظام اشتراكات متكامل
+
+**📞 الدعم:** @{DEVELOPER_USERNAME}
+{get_time()}
+"""
+    else:
+        help_text = f"""
+🚀 **بوت النشر التلقائي المطور**
+
+**📋 الأوامر المتاحة:**
+/start - القائمة الرئيسية
+/help - عرض المساعدة
+
+**⚙️ المميزات:**
+- 🔑 اربط لحد 5 حسابات تليجرام
+- 📥 اجلب كل جروباتك تلقائياً
+- ➕ ضيف جروبات يدوي بالرابط
+- 📩 ضيف 4 رسائل مختلفة لكل حساب
+- 🔄 اختار وضع التدوير أو نشر الكل
+- ⏱️ اظبط وقت الانتظار بين الجروبات
+- 💬 رد تلقائي على المنشن والكلمات
+- 📩 رد تلقائي في الخاص
+- 🎁 تجربة مجانية لمدة ساعة
+
+**💳 الاشتراك:**
+استخدم /start وبعدين "💳 اشترك الآن"
+
+**📞 الدعم الفني:** @{DEVELOPER_USERNAME}
+{get_time()}
+"""
+
+    try:
+        await bot.send_file(uid, file=HELP_PHOTO, caption=help_text)
+    except:
+        await event.reply(help_text)
 
 @bot.on(events.NewMessage(pattern='/activate'))
 async def activate_sub(event):
@@ -262,13 +400,87 @@ async def activate_sub(event):
 
 @bot.on(events.CallbackQuery)
 async def callbacks(event):
-    global is_posting
     uid = event.sender_id
     data = event.data
+    user = get_user_data(uid)
 
     if data == b"back":
         await event.edit("🔙 القائمة الرئيسية", buttons=main_menu(uid))
         return
+
+    if data == b"help":
+        await help_command(event)
+        return
+
+    if data == b"accounts":
+        await event.edit(f"🔑 **إدارة الحسابات**\n\nعدد الحسابات: {len(user['accounts'])}/{MAX_ACCOUNTS}", buttons=accounts_menu(uid))
+        return
+
+    if data == b"add_account":
+        if len(user['accounts']) >= MAX_ACCOUNTS:
+            return await event.answer(f"❌ الحد الأقصى {MAX_ACCOUNTS} حسابات", alert=True)
+
+        new_id = str(len(user['accounts']) + 1)
+        while new_id in user['accounts']:
+            new_id = str(int(new_id) + 1)
+
+        user['accounts'][new_id] = get_account_template()
+        user['accounts'][new_id]['name'] = f'حساب {new_id}'
+        user['active_account'] = new_id
+        save_db()
+        await event.edit(f"✅ تم إضافة {user['accounts'][new_id]['name']}\n\nالآن اربط الحساب:", buttons=account_control(uid, new_id))
+        return
+
+    if data.startswith(b'acc_'):
+        acc_id = data.decode().replace('acc_', '')
+        if acc_id in user['accounts']:
+            user['active_account'] = acc_id
+            save_db()
+            await event.edit(f"📱 **{user['accounts'][acc_id]['name']}**", buttons=account_control(uid, acc_id))
+        return
+
+    if data.startswith(b'rename_'):
+        acc_id = data.decode().replace('rename_', '')
+        waiting_for[uid] = f'rename_acc_{acc_id}'
+        await event.edit(f"✏️ **تغيير اسم الحساب**\n\nالاسم الحالي: {user['accounts'][acc_id]['name']}\n\nابعت الاسم الجديد:")
+        return
+
+    if data.startswith(b'login_'):
+        acc_id = data.decode().replace('login_', '')
+        if uid in login_sessions:
+            del login_sessions[uid]
+        waiting_for[uid] = f'phone_{acc_id}'
+        await event.edit("📱 **ربط حساب**\n\nابعت رقمك مع كود الدولة\nمثال: `+201234567890`\n\n❌ /cancel للالغاء")
+        return
+
+    if data.startswith(b'del_acc_'):
+        acc_id = data.decode().replace('del_acc_', '')
+        if acc_id in user['accounts']:
+            del user['accounts'][acc_id]
+            if user['active_account'] == acc_id:
+                user['active_account'] = next(iter(user['accounts'])) if user['accounts'] else None
+            save_db()
+            await event.answer("✅ تم حذف الحساب", alert=True)
+            await event.edit(f"🔑 **إدارة الحسابات**", buttons=accounts_menu(uid))
+        return
+
+    if data.startswith(b'toggle_post_'):
+        acc_id = data.decode().replace('toggle_post_', '')
+        if acc_id in user['accounts']:
+            acc = user['accounts'][acc_id]
+            if acc['is_posting']:
+                acc['is_posting'] = False
+                save_db()
+                await event.answer("🔴 تم إيقاف النشر", alert=True)
+            else:
+                if not acc['session']:
+                    return await event.answer("❌ اربط الحساب أول", alert=True)
+                asyncio.create_task(start_posting_uid(uid, acc_id))
+                await event.answer("🟢 بدأ النشر", alert=True)
+            await event.edit(f"📱 **{acc['name']}**", buttons=account_control(uid, acc_id))
+        return
+
+    acc = get_active_account(uid)
 
     if data == b"free_trial":
         if str(uid) in db['trial_users']:
@@ -320,38 +532,39 @@ async def callbacks(event):
         return
 
     if data == b"stats":
-        total_sent = db['stats']['total_sent']
+        if not acc:
+            return await event.answer("❌ اختار حساب أول", alert=True)
+        total_sent = sum(acc['msg_stats'])
         uptime = get_uptime()
-        active_groups = len([g for g in db['groups'] if g not in db['banned_groups']])
+        active_groups = len([g for g in acc['groups'] if g not in acc['banned_groups']])
 
-        msg = f"📊 **إحصائيات البوت**\n\n"
+        msg = f"📊 **إحصائيات {acc['name']}**\n\n"
         msg += f"⏱️ مدة التشغيل: `{uptime}`\n"
-        msg += f"📤 إجمالي الرسائل: `{total_sent}`\n"
-        msg += f"👥 الجروبات النشطة: `{active_groups}`\n"
-        msg += f"🚫 الجروبات المحظورة: `{len(db['banned_groups'])}`\n"
-        msg += f"💬 المشتركين: `{len(db['subs'])}`\n{get_time()}"
+        msg += f"📤 رسائلك: `{total_sent}`\n"
+        msg += f"👥 جروباتك: `{active_groups}`\n"
+        msg += f"🚫 محظور: `{len(acc['banned_groups'])}`\n{get_time()}"
 
         await event.answer(msg, alert=True)
         return
 
     if data == b"fetch":
-        if not db['session']:
+        if not acc or not acc['session']:
             return await event.answer("❌ اربط حساب أول", alert=True)
 
         await event.answer("⏳ جاري الجلب...", alert=False)
         try:
-            client = TelegramClient(StringSession(db['session']), API_ID, API_HASH)
+            client = TelegramClient(StringSession(acc['session']), API_ID, API_HASH)
             await client.connect()
 
             groups = {}
             async for dialog in client.iter_dialogs():
                 if isinstance(dialog.entity, (Channel, Chat)) and getattr(dialog.entity, 'megagroup', False):
                     gid = f"-100{dialog.entity.id}"
-                    if gid not in db['banned_groups']:
+                    if gid not in acc['banned_groups']:
                         groups[gid] = dialog.entity.title
 
             await client.disconnect()
-            db['groups'] = groups
+            acc['groups'] = groups
             save_db()
             await event.edit(f"✅ تم جلب {len(groups)} جروب", buttons=settings_menu(uid))
         except Exception as e:
@@ -359,9 +572,9 @@ async def callbacks(event):
         return
 
     if data == b"show_groups":
-        if not db['groups']:
+        if not acc or not acc['groups']:
             return await event.answer("❌ مفيش جروبات", alert=True)
-        active = [name for gid, name in db['groups'].items() if gid not in db['banned_groups']]
+        active = [name for gid, name in acc['groups'].items() if gid not in acc['banned_groups']]
         text = "\n".join([f"{i+1}. {name}" for i, name in enumerate(active[:30])])
         if len(active) > 30:
             text += f"\n\n... و {len(active)-30} جروب تاني"
@@ -374,41 +587,43 @@ async def callbacks(event):
         return
 
     if data == b"delete_group":
-        if not db['groups']:
+        if not acc or not acc['groups']:
             return await event.answer("❌ مفيش جروبات مضافة", alert=True)
         waiting_for[uid] = 'delete_group'
-        groups_list = "\n".join([f"{i+1}. {name}" for i, name in enumerate(db['groups'].values())])
+        groups_list = "\n".join([f"{i+1}. {name}" for i, name in enumerate(acc['groups'].values())])
         await event.edit(f"🗑️ **حذف جروب**\n\nاختر رقم الجروب:\n{groups_list[:3000]}\n\n❌ /cancel للالغاء")
         return
 
     if data == b"banned":
-        if not db['banned_groups']:
+        if not acc or not acc['banned_groups']:
             return await event.answer("✅ مفيش جروبات محظورة", alert=True)
-        text = "\n".join([f"{i+1}. {gid}" for i, gid in enumerate(db['banned_groups'][:20])])
+        text = "\n".join([f"{i+1}. {gid}" for i, gid in enumerate(acc['banned_groups'][:20])])
         await event.answer(f"🚫 **الجروبات المحظورة:**\n{text}", alert=True)
         return
 
     if data.startswith(b'msg_'):
+        if not acc:
+            return await event.answer("❌ اختار حساب أول", alert=True)
         idx = int(data.decode().split('_')[1])
         waiting_for[uid] = f'set_msg_{idx}'
-        current = db['messages'][idx] or 'فاضي'
+        current = acc['messages'][idx] or 'فاضي'
         await event.edit(f"✏️ **الرسالة {idx+1}**\n\nالحالية:\n{current[:500]}\n\nابعت النص الجديد:")
         return
 
     if data == b"set_sleep":
         waiting_for[uid] = 'set_sleep'
-        await event.edit(f"⏱️ **وقت الانتظار بين الجروبات**\n\nالحالي: {db['sleep_time']} ثانية\n\nابعت الوقت الجديد (بالثواني):")
+        await event.edit(f"⏱️ **وقت الانتظار بين الجروبات**\n\nالحالي: {acc['sleep_time']} ثانية\n\nابعت الوقت الجديد (بالثواني):")
         return
 
     if data == b"set_delay":
         waiting_for[uid] = 'set_delay'
-        await event.edit(f"⏱️ **وقت الانتظار بين الرسائل**\n\nالحالي: {db['msg_delay']} ثانية\n\nابعت الوقت الجديد:")
+        await event.edit(f"⏱️ **وقت الانتظار بين الرسائل**\n\nالحالي: {acc['msg_delay']} ثانية\n\nابعت الوقت الجديد:")
         return
 
     if data == b"toggle_mode":
-        db['send_all'] = not db['send_all']
+        acc['send_all'] = not acc['send_all']
         save_db()
-        mode = "وضع الكل 📤" if db['send_all'] else "وضع التدوير 🔄"
+        mode = "وضع الكل 📤" if acc['send_all'] else "وضع التدوير 🔄"
         await event.answer(f"✅ {mode}", alert=True)
         await event.edit("⚙️ **الإعدادات**", buttons=settings_menu(uid))
         return
@@ -417,7 +632,23 @@ async def callbacks(event):
         db['auto_reply'] = not db['auto_reply']
         save_db()
         status = "مفعل ✅" if db['auto_reply'] else "معطل ❌"
-        await event.answer(f"الرد التلقائي: {status}", alert=True)
+        await event.answer(f"الرد في الجروب: {status}", alert=True)
+        await event.edit("⚙️ **الإعدادات**", buttons=settings_menu(uid))
+        return
+
+    if data == b"toggle_reply_pm":
+        db['auto_reply_pm'] = not db['auto_reply_pm']
+        save_db()
+        status = "مفعل ✅" if db['auto_reply_pm'] else "معطل ❌"
+        await event.answer(f"الرد في الخاص: {status}", alert=True)
+        await event.edit("⚙️ **الإعدادات**", buttons=settings_menu(uid))
+        return
+
+    if data == b"toggle_keywords":
+        db['auto_reply_keywords_enabled'] = not db['auto_reply_keywords_enabled']
+        save_db()
+        status = "مفعل ✅" if db['auto_reply_keywords_enabled'] else "معطل ❌"
+        await event.answer(f"الرد على الكلمات: {status}", alert=True)
         await event.edit("⚙️ **الإعدادات**", buttons=settings_menu(uid))
         return
 
@@ -438,6 +669,13 @@ async def callbacks(event):
         await event.edit(f"🖼️ **الصورة الحالية:**\n{db['welcome_photo']}\n\n📸 ابعت صورة جديدة أو رابط مباشر\n❌ /cancel للالغاء")
         return
 
+    if data == b"change_start_photo":
+        if not is_admin(uid):
+            return await event.answer("❌ للادمن فقط", alert=True)
+        waiting_for[uid] = 'change_start_photo'
+        await event.edit(f"🖼️ **صورة /start الحالية:**\n{db['start_photo']}\n\n📸 ابعت صورة جديدة أو رابط مباشر\n❌ /cancel للالغاء")
+        return
+
     if data == b"edit_welcome":
         if not is_admin(uid):
             return await event.answer("❌ للادمن فقط", alert=True)
@@ -449,24 +687,37 @@ async def callbacks(event):
         if not is_admin(uid):
             return await event.answer("❌ للادمن فقط", alert=True)
         waiting_for[uid] = 'edit_reply'
-        await event.edit(f"💬 **نص الرد الحالي:**\n{db['auto_reply_text']}\n\nابعت النص الجديد:")
+        await event.edit(f"💬 **نص الرد في الجروب الحالي:**\n{db['auto_reply_text']}\n\nابعت النص الجديد:")
+        return
+
+    if data == b"edit_reply_pm":
+        if not is_admin(uid):
+            return await event.answer("❌ للادمن فقط", alert=True)
+        waiting_for[uid] = 'edit_reply_pm'
+        await event.edit(f"📝 **نص الرد في الخاص الحالي:**\n{db['auto_reply_pm_text']}\n\nابعت النص الجديد:")
+        return
+
+        if data == b"edit_keywords":
+        if not is_admin(uid):
+            return await event.answer("❌ للادمن فقط", alert=True)
+        waiting_for[uid] = 'edit_keywords'
+        keywords = ', '.join(db['auto_reply_keywords'])
+        await event.edit(f"🔤 **الكلمات الحالية:**\n{keywords}\n\nابعت الكلمات الجديدة مفصولة بفاصلة:\nمثال: `موجود, فينك, وينك, متاح`")
         return
 
     if data == b"start":
-        await start_posting(event)
+        if not acc:
+            return await event.answer("❌ اختار حساب أول", alert=True)
+        asyncio.create_task(start_posting_uid(uid, user['active_account']))
         return
 
     if data == b"stop":
-        is_posting = False
+        if not acc:
+            return await event.answer("❌ اختار حساب أول", alert=True)
+        acc['is_posting'] = False
+        save_db()
         await event.answer("🔴 تم إيقاف النشر", alert=True)
         await event.edit("⚙️ **الإعدادات**", buttons=settings_menu(uid))
-        return
-
-    if data == b"login":
-        if uid in login_sessions:
-            del login_sessions[uid]
-        waiting_for[uid] = 'phone'
-        await event.edit("📱 **ربط حساب**\n\nابعت رقمك مع كود الدولة\nمثال: `+201234567890`\n\n❌ /cancel للالغاء")
         return
 
     if data == b"admin":
@@ -521,9 +772,10 @@ async def callbacks(event):
 
 @bot.on(events.NewMessage)
 async def handle_msg(event):
-    global is_posting
     uid = event.sender_id
     text = event.raw_text.strip()
+    user = get_user_data(uid)
+    acc = get_active_account(uid)
 
     if text == "/cancel":
         if uid in waiting_for:
@@ -534,14 +786,15 @@ async def handle_msg(event):
 
     step = waiting_for.get(uid)
 
-    if step == 'phone':
+    if step and step.startswith('phone_'):
+        acc_id = step.replace('phone_', '')
         try:
             phone = text
             client = TelegramClient(StringSession(), API_ID, API_HASH)
             await client.connect()
             await client.send_code_request(phone)
-            login_sessions[uid] = {'phone': phone, 'client': client}
-            waiting_for[uid] = 'code'
+            login_sessions[uid] = {'phone': phone, 'client': client, 'acc_id': acc_id}
+            waiting_for[uid] = f'code_{acc_id}'
             await event.reply("📨 **تم إرسال الكود**\n\nابعت الكود اللي وصلك:\nمثال: `12345`")
         except Exception as e:
             await event.reply(f"❌ خطأ: {e}")
@@ -550,24 +803,29 @@ async def handle_msg(event):
             del waiting_for[uid]
         return
 
-    if step == 'code':
+    if step and step.startswith('code_'):
+        acc_id = step.replace('code_', '')
         try:
             code = text.replace(' ', '')
             session_data = login_sessions[uid]
             client = session_data['client']
             await client.sign_in(session_data['phone'], code)
             string_session = client.session.save()
-            db['session'] = string_session
+            me = await client.get_me()
+
+            user['accounts'][acc_id]['session'] = string_session
+            user['accounts'][acc_id]['phone'] = session_data['phone']
+            user['accounts'][acc_id]['username'] = me.username
             save_db()
             await client.disconnect()
             del login_sessions[uid]
             del waiting_for[uid]
-            await event.reply("✅ **تم ربط الحساب بنجاح!**\n\nتقدر دلوقتي تجلب الجروبات وتبدأ النشر")
+            await event.reply(f"✅ **تم ربط الحساب بنجاح!**\n📱 {session_data['phone']}\n👤 @{me.username}")
         except PhoneCodeInvalidError:
             await event.reply("❌ الكود غلط. ابعت الكود الصحيح:")
         except Exception as e:
             if "2FA" in str(e) or "password" in str(e).lower():
-                waiting_for[uid] = 'password'
+                waiting_for[uid] = f'password_{acc_id}'
                 await event.reply("🔐 **الحساب محمي بكلمة سر**\n\nابعت كلمة السر:")
             else:
                 await event.reply(f"❌ خطأ: {e}")
@@ -576,21 +834,34 @@ async def handle_msg(event):
                 del waiting_for[uid]
         return
 
-    if step == 'password':
+    if step and step.startswith('password_'):
+        acc_id = step.replace('password_', '')
         try:
             password = text
             session_data = login_sessions[uid]
             client = session_data['client']
             await client.sign_in(password=password)
             string_session = client.session.save()
-            db['session'] = string_session
+            me = await client.get_me()
+
+            user['accounts'][acc_id]['session'] = string_session
+            user['accounts'][acc_id]['phone'] = session_data['phone']
+            user['accounts'][acc_id]['username'] = me.username
             save_db()
             await client.disconnect()
             del login_sessions[uid]
             del waiting_for[uid]
-            await event.reply("✅ **تم ربط الحساب بنجاح!**")
+            await event.reply(f"✅ **تم ربط الحساب بنجاح!**\n📱 {session_data['phone']}\n👤 @{me.username}")
         except Exception as e:
             await event.reply(f"❌ كلمة السر غلط: {e}")
+        return
+
+    if step and step.startswith('rename_acc_'):
+        acc_id = step.replace('rename_acc_', '')
+        user['accounts'][acc_id]['name'] = text
+        save_db()
+        del waiting_for[uid]
+        await event.reply(f"✅ تم تغيير الاسم إلى: {text}")
         return
 
     if step == 'change_photo' and is_admin(uid):
@@ -599,12 +870,28 @@ async def handle_msg(event):
             db['welcome_photo'] = path
             save_db()
             del waiting_for[uid]
-            await event.reply(f"✅ تم تحديث الصورة\n📁 {path}")
+            await event.reply(f"✅ تم تحديث صورة الترحيب\n📁 {path}")
         elif text.startswith('http'):
             db['welcome_photo'] = text
             save_db()
             del waiting_for[uid]
-            await event.reply("✅ تم تحديث رابط الصورة")
+            await event.reply("✅ تم تحديث رابط صورة الترحيب")
+        else:
+            await event.reply("❌ ابعت صورة أو رابط")
+        return
+
+    if step == 'change_start_photo' and is_admin(uid):
+        if event.photo:
+            path = await event.download_media(file="start.jpg")
+            db['start_photo'] = path
+            save_db()
+            del waiting_for[uid]
+            await event.reply(f"✅ تم تحديث صورة /start\n📁 {path}")
+        elif text.startswith('http'):
+            db['start_photo'] = text
+            save_db()
+            del waiting_for[uid]
+            await event.reply("✅ تم تحديث رابط صورة /start")
         else:
             await event.reply("❌ ابعت صورة أو رابط")
         return
@@ -620,10 +907,27 @@ async def handle_msg(event):
         db['auto_reply_text'] = text
         save_db()
         del waiting_for[uid]
-        await event.reply(f"✅ تم تحديث نص الرد التلقائي")
+        await event.reply(f"✅ تم تحديث نص الرد في الجروب")
+        return
+
+    if step == 'edit_reply_pm' and is_admin(uid):
+        db['auto_reply_pm_text'] = text
+        save_db()
+        del waiting_for[uid]
+        await event.reply(f"✅ تم تحديث نص الرد في الخاص")
+        return
+
+    if step == 'edit_keywords' and is_admin(uid):
+        keywords = [k.strip() for k in text.split(',') if k.strip()]
+        db['auto_reply_keywords'] = keywords
+        save_db()
+        del waiting_for[uid]
+        await event.reply(f"✅ تم تحديث الكلمات:\n{', '.join(keywords)}")
         return
 
     if step == 'add_group':
+        if not acc:
+            return await event.reply("❌ اختار حساب أول")
         try:
             if text.startswith('https://t.me/'):
                 username = text.split('/')[-1].split('?')[0]
@@ -637,10 +941,10 @@ async def handle_msg(event):
             else:
                 return await event.reply("❌ رابط أو ايدي غير صحيح")
 
-            if gid in db['banned_groups']:
-                db['banned_groups'].remove(gid)
+            if gid in acc['banned_groups']:
+                acc['banned_groups'].remove(gid)
 
-            db['groups'][gid] = name
+            acc['groups'][gid] = name
             save_db()
             del waiting_for[uid]
             await event.reply(f"✅ تم إضافة: {name}")
@@ -649,13 +953,15 @@ async def handle_msg(event):
         return
 
     if step == 'delete_group':
+        if not acc:
+            return await event.reply("❌ اختار حساب أول")
         try:
             idx = int(text) - 1
-            groups_list = list(db['groups'].items())
+            groups_list = list(acc['groups'].items())
             if 0 <= idx < len(groups_list):
                 gid, name = groups_list[idx]
-                del db['groups'][gid]
-                db['banned_groups'].append(gid)
+                del acc['groups'][gid]
+                acc['banned_groups'].append(gid)
                 save_db()
                 del waiting_for[uid]
                 await event.reply(f"✅ تم حذف: {name}\n🚫 تم حظره من الجلب التلقائي")
@@ -666,19 +972,23 @@ async def handle_msg(event):
         return
 
     if step and step.startswith('set_msg_'):
+        if not acc:
+            return await event.reply("❌ اختار حساب أول")
         idx = int(step.split('_')[2])
-        db['messages'][idx] = text
+        acc['messages'][idx] = text
         save_db()
         del waiting_for[uid]
         await event.reply(f"✅ تم حفظ الرسالة {idx+1}")
         return
 
     if step == 'set_sleep':
+        if not acc:
+            return await event.reply("❌ اختار حساب أول")
         try:
             sleep_time = int(text)
             if sleep_time < 10:
                 return await event.reply("❌ أقل وقت 10 ثواني")
-            db['sleep_time'] = sleep_time
+            acc['sleep_time'] = sleep_time
             save_db()
             del waiting_for[uid]
             await event.reply(f"✅ تم التحديث: {sleep_time} ثانية")
@@ -687,11 +997,13 @@ async def handle_msg(event):
         return
 
     if step == 'set_delay':
+        if not acc:
+            return await event.reply("❌ اختار حساب أول")
         try:
             delay = int(text)
             if delay < 1:
                 return await event.reply("❌ أقل وقت ثانية واحدة")
-            db['msg_delay'] = delay
+            acc['msg_delay'] = delay
             save_db()
             del waiting_for[uid]
             await event.reply(f"✅ تم التحديث: {delay} ثانية")
@@ -779,86 +1091,112 @@ async def handle_msg(event):
         return
 
 # --- النشر التلقائي ---
-async def start_posting(event):
-    global is_posting
-    uid = event.sender_id
+async def start_posting_uid(uid, acc_id):
+    user = get_user_data(uid)
+    acc = user['accounts'][acc_id]
 
-    if not db['session']:
-        return await event.answer("❌ اربط حساب أول", alert=True)
-    if not db['groups']:
-        return await event.answer("❌ ضيف جروبات أول", alert=True)
-    if not any(db['messages']):
-        return await event.answer("❌ ضيف رسائل أول", alert=True)
+    if not acc['session']:
+        return
+    if not acc['groups']:
+        return
+    if not any(acc['messages']):
+        return
 
-    if is_posting:
-        return await event.answer("⚠️ النشر شغال بالفعل", alert=True)
+    if acc['is_posting']:
+        return
 
-    is_posting = True
-    await event.answer("🚀 بدأ النشر", alert=True)
+    acc['is_posting'] = True
+    save_db()
 
     try:
-        client = TelegramClient(StringSession(db['session']), API_ID, API_HASH)
+        client = TelegramClient(StringSession(acc['session']), API_ID, API_HASH)
         await client.start()
 
-        msgs = [m for m in db['messages'] if m]
-        active_groups = [gid for gid in db['groups'] if gid not in db['banned_groups']]
+        msgs = [m for m in acc['messages'] if m]
+        active_groups = [gid for gid in acc['groups'] if gid not in acc['banned_groups']]
 
         if not active_groups:
-            await bot.send_message(uid, "❌ مفيش جروبات نشطة")
-            is_posting = False
+            await bot.send_message(uid, f"❌ مفيش جروبات نشطة في {acc['name']}")
+            acc['is_posting'] = False
+            save_db()
             return
 
-        await bot.send_message(uid, f"🚀 **بدأ النشر**\n👥 الجروبات: `{len(active_groups)}`\n📩 الرسائل: `{len(msgs)}`\n⏱️ وقت الجروب: `{db['sleep_time']}ث`")
+        await bot.send_message(uid, f"🚀 **بدأ النشر - {acc['name']}**\n👥 الجروبات: `{len(active_groups)}`\n📩 الرسائل: `{len(msgs)}`\n⏱️ وقت الجروب: `{acc['sleep_time']}ث`")
 
-        while is_posting:
+        while acc['is_posting']:
             for gid in active_groups:
-                if not is_posting:
+                if not acc['is_posting']:
                     break
 
                 try:
-                    if db['send_all']:
+                    if acc['send_all']:
                         for i, msg in enumerate(msgs):
                             await client.send_message(int(gid), msg)
-                            db['msg_stats'][i] += 1
+                            acc['msg_stats'][i] += 1
                             db['stats']['total_sent'] += 1
-                            await asyncio.sleep(db['msg_delay'])
+                            await asyncio.sleep(acc['msg_delay'])
                     else:
-                        msg = msgs[db['current_msg']]
+                        msg = msgs[acc['current_msg']]
                         await client.send_message(int(gid), msg)
-                        db['msg_stats'][db['current_msg']] += 1
+                        acc['msg_stats'][acc['current_msg']] += 1
                         db['stats']['total_sent'] += 1
-                        db['current_msg'] = (db['current_msg'] + 1) % len(msgs)
+                        acc['current_msg'] = (acc['current_msg'] + 1) % len(msgs)
 
                     save_db()
                 except FloodWaitError as e:
-                    await bot.send_message(uid, f"⏳ حظر مؤقت {e.seconds} ثانية في جروب `{db['groups'].get(gid, gid)}`")
+                    await bot.send_message(uid, f"⏳ حظر مؤقت {e.seconds} ثانية في جروب `{acc['groups'].get(gid, gid)}`")
                     await asyncio.sleep(e.seconds)
                 except Exception as e:
                     print(f"Error posting to {gid}: {e}")
 
-                await asyncio.sleep(db['sleep_time'])
+                await asyncio.sleep(acc['sleep_time'])
 
         await client.disconnect()
     except Exception as e:
-        await bot.send_message(uid, f"❌ خطأ في النشر: {e}")
+        await bot.send_message(uid, f"❌ خطأ في النشر - {acc['name']}: {e}")
     finally:
-        is_posting = False
-        await bot.send_message(uid, "🔴 توقف النشر")
+        acc['is_posting'] = False
+        save_db()
+        await bot.send_message(uid, f"🔴 توقف النشر - {acc['name']}")
 
 # --- الرد التلقائي ---
 @bot.on(events.NewMessage(incoming=True))
 async def auto_reply(event):
-    if not db['auto_reply'] or not db['session']:
-        return
-    if not event.is_group:
-        return
+    # للجروبات
+    if event.is_group:
+        # الرد على المنشن
+        if db['auto_reply']:
+            try:
+                if event.client:
+                    me = await event.client.get_me()
+                    if me and me.username and f"@{me.username.lower()}" in (event.raw_text or "").lower():
+                        await event.reply(db['auto_reply_text'])
+                        return
+            except:
+                pass
 
-    try:
-        me = await event.client.get_me()
-        if me and me.username and f"@{me.username.lower()}" in (event.raw_text or "").lower():
-            await event.reply(db['auto_reply_text'])
-    except:
-        pass
+        # الرد على الكلمات
+        if db['auto_reply_keywords_enabled']:
+            try:
+                msg_text = (event.raw_text or "").lower().strip()
+                for keyword in db['auto_reply_keywords']:
+                    if keyword.lower() in msg_text:
+                        await event.reply(db['auto_reply_text'])
+                        break
+            except:
+                pass
+
+    # للخاص
+    else:
+        if not db['auto_reply_pm']:
+            return
+        try:
+            if event.sender_id == (await event.client.get_me()).id:
+                return
+            if event.is_private and not event.out:
+                await event.reply(db['auto_reply_pm_text'])
+        except:
+            pass
 
 async def main():
     await bot.start(bot_token=BOT_TOKEN)
