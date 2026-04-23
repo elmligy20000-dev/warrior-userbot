@@ -286,7 +286,7 @@ async def start(event):
             await bot.get_permissions(MANDATORY_CHANNEL, uid)
         except UserNotParticipantError:
             btns = [[Button.url("📢 اشترك الآن", f"https://t.me/{MANDATORY_CHANNEL.replace('@', '')}")]]
-            return await event.reply(f"⚠️ **لازم تشترك في القناة أولاً**\n\n{MANDATORY_CHANNEL}\n\nبعد الاشتراك ارجع اعمل /start", buttons=btns)
+            return await event.reply(f"⚠️ **مطلوب الاشتراك في القناة أولاً**\n\n{MANDATORY_CHANNEL}\n\nبعد الاشتراك اضغط /start", buttons=btns)
         except:
             pass
 
@@ -312,9 +312,9 @@ async def start(event):
         if str(uid) not in db['trial_users']:
             btns.append([Button.inline("🎁 تجربة مجانية 1 ساعة", b"free_trial")])
         btns.append([Button.inline("💳 اشترك الآن", b"pay_menu")])
-        btns.append([Button.url("👨‍💻 المبرمج", f"https://t.me/{DEVELOPER_USERNAME}")])
+        btns.append([Button.url("👨‍💻 اضـغط لـ مـراسلة المـبرمـج", f"https://t.me/{DEVELOPER_USERNAME}")])
 
-        caption = f"🚀 **بوت النشر التلقائي المطور**\n⚠️ **اشتراكك غير مفعل**\n🆔 ايديك: `{uid}`{get_time()}"
+        caption = f"🚀 **بوت النشر التلقائي المتطور**\n⚠️ **اشتراكك غير مفعل**\n🆔 ايديك: `{uid}`{get_time()}"
 
         try:
             await bot.send_file(uid, file=db['start_photo'], caption=caption, buttons=btns)
@@ -322,7 +322,7 @@ async def start(event):
             await event.reply(caption, buttons=btns)
         return
 
-    caption = f"🚀 **بوت النشر التلقائي المطور**\n\n✅ اشتراكك مفعل\n\n👇 اختار من الأزرار تحت{get_time()}"
+    caption = f"🚀 **بوت النشر التلقائي المتطور**\n\n✅ اشتراكك مفعل\n\n👇 اختار من الأزرار تحت{get_time()}"
 
     try:
         await bot.send_file(uid, file=db['start_photo'], caption=caption, buttons=main_menu(uid))
@@ -336,7 +336,7 @@ async def help_command(event):
 
     if is_admin(uid):
         help_text = f"""
-🚀 **أوامر بوت النشر المطور**
+🚀 **أوامر بوت النشر المتطور**
 
 **👤 أوامر المستخدمين:**
 /start - القائمة الرئيسية
@@ -363,7 +363,7 @@ async def help_command(event):
 """
     else:
         help_text = f"""
-🚀 **بوت النشر التلقائي المطور**
+🚀 **بوت النشر التلقائي المتطور**
 
 **📋 الأوامر المتاحة:**
 /start - القائمة الرئيسية
@@ -570,7 +570,7 @@ async def callbacks(event):
             await bot.send_message(ADMIN_ID, admin_msg)
             await event.answer("✅ تم إرسال إشعار للمطور\nهيتواصل معاك قريب", alert=True)
         except:
-            await event.answer("❌ فشل الإرسال، كلم المطور مباشر", alert=True)
+            await event.answer("❌ فشل الإرسال، كلم المبرمج مباشر", alert=True)
         return
 
     if data == b"settings":
@@ -772,14 +772,14 @@ async def callbacks(event):
         if not is_admin(uid):
             return await event.answer("❌ للادمن فقط", alert=True)
         waiting_for[uid] = 'add_sub_id'
-        await event.edit("➕ **إضافة اشتراك**\n\nابعت ايدي المستخدم:")
+        await event.edit("➕ **إضافة Vip**\n\nابعت ايدي المستخدم:")
         return
 
     if data == b"remove_sub":
         if not is_admin(uid):
             return await event.answer("❌ للادمن فقط", alert=True)
         waiting_for[uid] = 'remove_sub'
-        await event.edit("➖ **إزالة اشتراك**\n\nابعت ايدي المستخدم:")
+        await event.edit("➖ **إزالة Vip**\n\nابعت ايدي المستخدم:")
         return
 
     if data == b"list_subs":
