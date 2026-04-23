@@ -697,7 +697,7 @@ async def callbacks(event):
         await event.edit(f"📝 **نص الرد في الخاص الحالي:**\n{db['auto_reply_pm_text']}\n\nابعت النص الجديد:")
         return
 
-        if data == b"edit_keywords":
+    if data == b"edit_keywords":
         if not is_admin(uid):
             return await event.answer("❌ للادمن فقط", alert=True)
         waiting_for[uid] = 'edit_keywords'
