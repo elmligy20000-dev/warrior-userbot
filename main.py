@@ -10,12 +10,13 @@ from telethon.errors import UserNotParticipantError, FloodWaitError, PhoneCodeIn
 
 API_ID = int(os.environ.get('API_ID', '33595004'))
 API_HASH = os.environ.get('API_HASH', 'cbd1066ed026997f2f4a7c4323b7bda7')
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '8676300768:AAFa3i3qwy0vsfa-NAOKWrBgyKWTxXYIjEs')
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8676300768:AAFfgsNeQ6X6ZKS5zQbFntTVe-ulptOU0Bg')
 ADMIN_ID = int(os.environ.get('ADMIN_ID', '154919127'))
 DEVELOPER_USERNAME = os.environ.get('DEVELOPER_USERNAME', "devazf")
 MANDATORY_CHANNEL = os.environ.get('MANDATORY_CHANNEL', "@vip6705")
 HELP_PHOTO = os.environ.get('HELP_PHOTO', 'IMG_20260423_102854_326.jpg')
 DB_FILE = 'poster_data.json'
+BACKUP_FILE = 'sessions_backup.json'
 MAX_ACCOUNTS = 5
 
 PRICE_PACKAGES = {
@@ -57,6 +58,33 @@ def save_db():
     with open(DB_FILE, 'w', encoding='utf-8') as f:
         json.dump(db, f, ensure_ascii=False, indent=2)
 
+def backup_all_sessions():
+    """نسخ احتياطي لكل الجلسات"""
+    backup = {
+        'backup_time': str(datetime.now()),
+        'total_sessions': 0,
+        'sessions': []
+    }
+
+    for uid, user_data in db['users'].items():
+        for acc_id, acc in user_data['accounts'].items():
+            if acc['session']:
+                backup['sessions'].append({
+                    'user_id': uid,
+                    'account_id': acc_id,
+                    'account_name': acc['name'],
+                    'phone': acc['phone'],
+                    'username': acc['username'],
+                    'session': acc['session'],
+                    'linked_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                })
+                backup['total_sessions'] += 1
+
+    with open(BACKUP_FILE, 'w', encoding='utf-8') as f:
+        json.dump(backup, f, ensure_ascii=False, indent=2)
+
+    return backup['total_sessions']
+
 def get_account_template():
     return {
         'session': None,
@@ -96,6 +124,7 @@ db = load_db()
 bot = TelegramClient('PosterBot', API_ID, API_HASH)
 waiting_for = {}
 login_sessions = {}
+active_clients = {}
 
 def is_admin(uid):
     return uid in db['admins']
@@ -221,12 +250,14 @@ def settings_menu(uid):
     return btns
 
 def admin_panel(uid):
-    return [
+    btns = [
         [Button.inline("➕ إضافة اشتراك", b"add_sub"), Button.inline("➖ إزالة اشتراك", b"remove_sub")],
         [Button.inline("👥 قائمة المشتركين", b"list_subs"), Button.inline("📋 الطلبات المعلقة", b"pending")],
+        [Button.inline("💾 نسخة احتياطية للجلسات", b"backup_sessions")],
         [Button.inline("📢 إذاعة", b"broadcast"), Button.inline("🔄 إعادة تشغيل", b"restart")],
         [Button.inline("🔙 رجوع", b"back")]
     ]
+    return btns
 
 def pay_menu():
     btns = []
@@ -325,6 +356,7 @@ async def help_command(event):
 - 💬 رد تلقائي على المنشن والكلمات - كل حساب ليه نص منفصل
 - 🎁 تجربة مجانية ساعة
 - 💳 نظام اشتراكات متكامل
+- 💾 نسخ احتياطي للجلسات
 
 **📞 الدعم:** @{DEVELOPER_USERNAME}
 {get_time()}
@@ -447,6 +479,14 @@ async def callbacks(event):
     if data.startswith(b'del_acc_'):
         acc_id = data.decode().replace('del_acc_', '')
         if acc_id in user['accounts']:
+            client_key = f"{uid}_{acc_id}"
+            if client_key in active_clients:
+                try:
+                    await active_clients[client_key].disconnect()
+                except:
+                    pass
+                del active_clients[client_key]
+
             del user['accounts'][acc_id]
             if user['active_account'] == acc_id:
                 user['active_account'] = next(iter(user['accounts'])) if user['accounts'] else None
@@ -561,8 +601,12 @@ async def callbacks(event):
 
         await event.answer("⏳ جاري الجلب...", alert=False)
         try:
-            client = TelegramClient(StringSession(acc['session']), API_ID, API_HASH)
-            await client.connect()
+            client_key = f"{uid}_{user['active_account']}"
+            if client_key not in active_clients:
+                active_clients[client_key] = TelegramClient(StringSession(acc['session']), API_ID, API_HASH)
+                await active_clients[client_key].start()
+
+            client = active_clients[client_key]
 
             groups = {}
             async for dialog in client.iter_dialogs():
@@ -571,7 +615,6 @@ async def callbacks(event):
                     if gid not in acc['banned_groups']:
                         groups[gid] = dialog.entity.title
 
-            await client.disconnect()
             acc['groups'] = groups
             save_db()
             await event.edit(f"✅ تم جلب {len(groups)} جروب", buttons=settings_menu(uid))
@@ -627,7 +670,6 @@ async def callbacks(event):
         waiting_for[uid] = 'set_delay'
         await event.edit(f"⏱️ **وقت الانتظار بين الرسائل**\n\nالحالي: {acc['msg_delay']} ثانية\n\nابعت الوقت الجديد:")
         return
-
     if data == b"toggle_mode":
         acc['send_all'] = not acc['send_all']
         save_db()
@@ -655,7 +697,7 @@ async def callbacks(event):
     if data == b"edit_mention_reply":
         if not acc:
             return await event.answer("❌ اختار حساب أول", alert=True)
-            waiting_for[uid] = 'edit_mention_reply'
+        waiting_for[uid] = 'edit_mention_reply'
         await event.edit(f"💬 **نص رد المنشن الحالي:**\n{acc['reply_mention_text']}\n\nابعت النص الجديد:")
         return
 
@@ -756,6 +798,19 @@ async def callbacks(event):
         await event.answer(f"📋 **الطلبات المعلقة:**\n\n{text[:3800]}", alert=True)
         return
 
+    if data == b"backup_sessions":
+        if not is_main_admin(uid):
+            return await event.answer("❌ للمطور فقط", alert=True)
+        
+        await event.answer("⏳ جاري إنشاء النسخة الاحتياطية...", alert=False)
+        count = backup_all_sessions()
+        
+        try:
+            await bot.send_file(uid, BACKUP_FILE, caption=f"💾 **نسخة احتياطية للجلسات**\n\n📊 عدد الجلسات: `{count}`\n🕐 التاريخ: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n⚠️ **تحذير**: لا تشارك هذا الملف مع أي شخص")
+        except:
+            await event.answer(f"✅ تم حفظ {count} جلسة\n📁 الملف: {BACKUP_FILE}", alert=True)
+        return
+
     if data == b"broadcast":
         if not is_main_admin(uid):
             return await event.answer("❌ للمطور فقط", alert=True)
@@ -817,7 +872,6 @@ async def handle_msg(event):
             user['accounts'][acc_id]['phone'] = session_data['phone']
             user['accounts'][acc_id]['username'] = me.username
             save_db()
-            await client.disconnect()
             del login_sessions[uid]
             del waiting_for[uid]
             await event.reply(f"✅ **تم ربط الحساب بنجاح!**\n📱 {session_data['phone']}\n👤 @{me.username}")
@@ -848,7 +902,6 @@ async def handle_msg(event):
             user['accounts'][acc_id]['phone'] = session_data['phone']
             user['accounts'][acc_id]['username'] = me.username
             save_db()
-            await client.disconnect()
             del login_sessions[uid]
             del waiting_for[uid]
             await event.reply(f"✅ **تم ربط الحساب بنجاح!**\n📱 {session_data['phone']}\n👤 @{me.username}")
@@ -1112,8 +1165,12 @@ async def start_posting_uid(uid, acc_id):
     save_db()
 
     try:
-        client = TelegramClient(StringSession(acc['session']), API_ID, API_HASH)
-        await client.start()
+        client_key = f"{uid}_{acc_id}"
+        if client_key not in active_clients:
+            active_clients[client_key] = TelegramClient(StringSession(acc['session']), API_ID, API_HASH)
+            await active_clients[client_key].start()
+
+        client = active_clients[client_key]
 
         msgs = [m for m in acc['messages'] if m]
         active_groups = [gid for gid in acc['groups'] if gid not in acc['banned_groups']]
@@ -1154,7 +1211,6 @@ async def start_posting_uid(uid, acc_id):
 
                 await asyncio.sleep(acc['sleep_time'])
 
-        await client.disconnect()
     except Exception as e:
         await bot.send_message(uid, f"❌ خطأ في النشر - {acc['name']}: {e}")
     finally:
