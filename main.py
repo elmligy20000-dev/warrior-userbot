@@ -741,7 +741,7 @@ async def handle_msg(event):
             user_id = step.replace('add_sub_days_', '')
             days = int(text)
             expiry = datetime.now() + timedelta(days=days)
-                        db['subs'][user_id] = expiry.strftime('%Y-%m-%d')
+            db['subs'][user_id] = expiry.strftime('%Y-%m-%d')
             save_db()
             del waiting_for[uid]
             await event.reply(f"✅ تم إضافة اشتراك\n👤 `{user_id}`\n⏰ {days} يوم\n📅 ينتهي: {expiry.strftime('%Y-%m-%d')}")
