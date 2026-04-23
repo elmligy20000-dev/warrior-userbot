@@ -2,6 +2,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 import asyncio, os, aiohttp
 from datetime import datetime
+import re
 
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
@@ -27,12 +28,10 @@ async def get_prices():
 
     try:
         async with aiohttp.ClientSession() as session:
-            # العملات
             async with session.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=10) as r:
                 forex = await r.json()
                 rates = forex["rates"]
 
-            # الكريبتو - API بديل عشان CoinGecko بيحظر Railway
             try:
                 async with session.get("https://api.binance.com/api/v3/ticker/price", timeout=10) as r:
                     binance = await r.json()
@@ -42,7 +41,6 @@ async def get_prices():
                     ltc = prices.get('LTCUSDT', 70)
                     ton = prices.get('TONUSDT', 5.5)
             except:
-                # لو باينانس وقع، استخدم قيم افتراضية
                 btc, eth, ltc, ton = 65000, 3200, 70, 5.5
 
             data = {
@@ -65,7 +63,7 @@ async def get_prices():
             return data
             
     except Exception as e:
-        print(f"Error fetching prices: {e}")
+        print(f"Error: {e}")
         if cache["data"]:
             return cache["data"]
         return {
@@ -77,19 +75,19 @@ async def get_prices():
             "updated": "Offline"
         }
 
-@app.on_message(filters.command(["start", "اسعار"]))
+@app.on_message(filters.command(["start"]) | filters.regex(r"^(اسعار)$"))
 async def start(client, message: Message):
     text = """
 💰 **بوت أسعار العملات اللحظية**
 
-**الأوامر:**
+**اكتب أي حاجة من دول:**
 `اسعار` - كل الأسعار المهمة
 `عملات` - كل العملات
 `دولار` `يورو` `ريال` `درهم` `دينار` `عراقي`
 `رصيد` - أسعار رصيد آسياسيل وزين
 `بيتكوين` `لايت` `تون` `ايث`
 
-اكتب `سعر الدولار` وهيرد عليك 👇
+**أو اسأل:** `سعر الدولار` `بكام اليورو`
 """
     btn = InlineKeyboardMarkup([
         [InlineKeyboardButton("💵 أهم الأسعار", callback_data="all_prices")],
@@ -107,7 +105,7 @@ async def start(client, message: Message):
     ])
     await message.reply(text, reply_markup=btn)
 
-@app.on_message(filters.command(["اسعار"]))
+@app.on_message(filters.regex(r"^(اسعار)$"))
 async def all_prices_cmd(client, message: Message):
     msg = await message.reply("⏳ جاري جلب الأسعار...")
     data = await get_prices()
@@ -132,7 +130,7 @@ async def all_prices_cmd(client, message: Message):
 """
     await msg.edit(text)
 
-@app.on_message(filters.command(["عملات"]))
+@app.on_message(filters.regex(r"^(عملات)$"))
 async def all_currencies_cmd(client, message: Message):
     msg = await message.reply("⏳ جاري جلب كل العملات...")
     data = await get_prices()
@@ -152,32 +150,32 @@ async def all_currencies_cmd(client, message: Message):
     text += f"\n⏰ **آخر تحديث:** {data['updated']}"
     await msg.edit(text)
 
-@app.on_message(filters.command(["دولار", "usd"]))
+@app.on_message(filters.regex(r"^(دولار)$"))
 async def usd_price(client, message: Message):
     data = await get_prices()
     await message.reply(f"💵 **دولار أمريكي:** `{data['usd']} جنيه`\n⏰ {data['updated']}")
 
-@app.on_message(filters.command(["يورو", "eur"]))
+@app.on_message(filters.regex(r"^(يورو)$"))
 async def eur_price(client, message: Message):
     data = await get_prices()
     await message.reply(f"💶 **يورو:** `{data['eur']} جنيه`\n⏰ {data['updated']}")
 
-@app.on_message(filters.command(["ريال", "sar"]))
+@app.on_message(filters.regex(r"^(ريال)$"))
 async def sar_price(client, message: Message):
     data = await get_prices()
     await message.reply(f"🇸🇦 **ريال سعودي:** `{data['sar']} جنيه`\n⏰ {data['updated']}")
 
-@app.on_message(filters.command(["درهم", "aed"]))
+@app.on_message(filters.regex(r"^(درهم)$"))
 async def aed_price(client, message: Message):
     data = await get_prices()
     await message.reply(f"🇦🇪 **درهم إماراتي:** `{data['aed']} جنيه`\n⏰ {data['updated']}")
 
-@app.on_message(filters.command(["دينار", "kwd"]))
+@app.on_message(filters.regex(r"^(دينار)$"))
 async def kwd_price(client, message: Message):
     data = await get_prices()
     await message.reply(f"🇰🇼 **دينار كويتي:** `{data['kwd']} جنيه`\n⏰ {data['updated']}")
 
-@app.on_message(filters.command(["عراقي", "iqd", "دينار عراقي"]))
+@app.on_message(filters.regex(r"^(عراقي)$"))
 async def iqd_price(client, message: Message):
     data = await get_prices()
     iqd_1000_egp = round(data['iqd'] * 1000, 2)
@@ -192,7 +190,7 @@ async def iqd_price(client, message: Message):
 """
     await message.reply(text)
 
-@app.on_message(filters.command(["رصيد", "اسياسيل", "زين"]))
+@app.on_message(filters.regex(r"^(رصيد)$"))
 async def iraq_balance(client, message: Message):
     data = await get_prices()
     usd_iqd = round(1 / (data['iqd'] / data['usd']), 0)
@@ -213,59 +211,50 @@ async def iraq_balance(client, message: Message):
 """
     await message.reply(text)
 
-@app.on_message(filters.command(["بيتكوين", "btc"]))
+@app.on_message(filters.regex(r"^(بيتكوين)$"))
 async def btc_price(client, message: Message):
     data = await get_prices()
     btc_egp = round(data['btc'] * data['usd'], 0)
     await message.reply(f"₿ **بيتكوين:** `${data['btc']:,}` = `{btc_egp:,} جنيه`\n⏰ {data['updated']}")
 
-@app.on_message(filters.command(["لايت", "ltc", "لايتكوين"]))
+@app.on_message(filters.regex(r"^(لايت)$"))
 async def ltc_price(client, message: Message):
     data = await get_prices()
     ltc_egp = round(data['ltc'] * data['usd'], 2)
     await message.reply(f"🔶 **Litecoin:** `${data['ltc']}` = `{ltc_egp} جنيه`\n⏰ {data['updated']}")
 
-@app.on_message(filters.command(["تون", "ton"]))
+@app.on_message(filters.regex(r"^(تون)$"))
 async def ton_price(client, message: Message):
     data = await get_prices()
     ton_egp = round(data['ton'] * data['usd'], 2)
     await message.reply(f"💎 **TON:** `${data['ton']}` = `{ton_egp} جنيه`\n⏰ {data['updated']}")
 
-@app.on_message(filters.command(["ايث", "eth", "ايثريوم"]))
+@app.on_message(filters.regex(r"^(ايث)$"))
 async def eth_price(client, message: Message):
     data = await get_prices()
     eth_egp = round(data['eth'] * data['usd'], 0)
     await message.reply(f"💎 **ايثريوم:** `${data['eth']:,}` = `{eth_egp:,} جنيه`\n⏰ {data['updated']}")
 
-@app.on_message(filters.text & ~filters.command([]))
-async def text_prices(client, message: Message):
-    text = message.text.lower().strip()
+@app.on_message(filters.text & filters.regex(r"(سعر|بكام).*(دولار|usd)", flags=re.IGNORECASE))
+async def text_usd(client, message: Message):
+    data = await get_prices()
+    await message.reply(f"💵 **دولار أمريكي:** `{data['usd']} جنيه`\n⏰ {data['updated']}")
 
-    commands = ['start', 'اسعار', 'عملات', 'دولار', 'يورو', 'ريال', 'درهم', 'دينار', 'عراقي', 'رصيد', 'استرليني', 'بيتكوين', 'لايت', 'تون', 'ايث']
-    if any(text == cmd or text.startswith(cmd + ' ') for cmd in commands):
-        return
+@app.on_message(filters.text & filters.regex(r"(سعر|بكام).*(يورو|eur)", flags=re.IGNORECASE))
+async def text_eur(client, message: Message):
+    data = await get_prices()
+    await message.reply(f"💶 **يورو:** `{data['eur']} جنيه`\n⏰ {data['updated']}")
 
-    if any(word in text for word in ['سعر الدولار', 'بكام الدولار', 'الدولار']):
-        data = await get_prices()
-        await message.reply(f"💵 **دولار أمريكي:** `{data['usd']} جنيه`\n⏰ {data['updated']}")
+@app.on_message(filters.text & filters.regex(r"(سعر|بكام).*(ريال|sar)", flags=re.IGNORECASE))
+async def text_sar(client, message: Message):
+    data = await get_prices()
+    await message.reply(f"🇸🇦 **ريال سعودي:** `{data['sar']} جنيه`\n⏰ {data['updated']}")
 
-    elif any(word in text for word in ['سعر اليورو', 'بكام اليورو', 'اليورو']):
-        data = await get_prices()
-        await message.reply(f"💶 **يورو:** `{data['eur']} جنيه`\n⏰ {data['updated']}")
-
-    elif any(word in text for word in ['سعر الريال', 'بكام الريال', 'الريال']):
-        data = await get_prices()
-        await message.reply(f"🇸🇦 **ريال سعودي:** `{data['sar']} جنيه`\n⏰ {data['updated']}")
-
-    elif any(word in text for word in ['سعر العراقي', 'الدينار العراقي', 'عراقي']):
-        data = await get_prices()
-        iqd_1000 = round(data['iqd'] * 1000, 2)
-        await message.reply(f"🇮🇶 **دينار عراقي:** `{data['iqd']} جنيه`\n**1000 دينار:** `{iqd_1000} جنيه`\n⏰ {data['updated']}")
-
-    elif any(word in text for word in ['رصيد', 'اسياسيل', 'زين العراق']):
-        data = await get_prices()
-        usd_iqd = round(1 / (data['iqd'] / data['usd']), 0)
-        await message.reply(f"🇮🇶 **رصيد العراق:**\nآسياسيل: `{round(usd_iqd * 1.08, 0)} دينار/دولار`\nزين: `{round(usd_iqd * 1.09, 0)} دينار/دولار`\n⏰ {data['updated']}")
+@app.on_message(filters.text & filters.regex(r"(سعر|بكام).*(عراقي|iqd)", flags=re.IGNORECASE))
+async def text_iqd(client, message: Message):
+    data = await get_prices()
+    iqd_1000 = round(data['iqd'] * 1000, 2)
+    await message.reply(f"🇮🇶 **دينار عراقي:** `{data['iqd']} جنيه`\n**1000 دينار:** `{iqd_1000} جنيه`\n⏰ {data['updated']}")
 
 @app.on_callback_query()
 async def buttons(client, callback_query):
