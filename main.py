@@ -36,8 +36,9 @@ async def get_prices():
                 forex = await r.json()
                 rates = forex["rates"]
 
-            async with session.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,toncoin,litecoin&vs_currencies=usd") as r:
+            async with session.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,toncoin,the-open-network,litecoin&vs_currencies=usd") as r:
                 crypto = await r.json()
+                ton_price = crypto.get("toncoin", {}).get("usd") or crypto.get("the-open-network", {}).get("usd", 5.5)
 
             data = {
                 "usd": round(rates["EGP"], 2), "eur": round(rates["EGP"] / rates["EUR"], 2),
@@ -51,7 +52,7 @@ async def get_prices():
                 "try": round(rates["EGP"] / rates["TRY"], 2), "inr": round(rates["EGP"] / rates["INR"], 2),
                 "pkr": round(rates["EGP"] / rates["PKR"], 2), "myr": round(rates["EGP"] / rates["MYR"], 2),
                 "btc": crypto["bitcoin"]["usd"], "eth": crypto["ethereum"]["usd"],
-                "usdt": crypto["tether"]["usd"], "ton": crypto["toncoin"]["usd"],
+                "usdt": crypto["tether"]["usd"], "ton": ton_price,
                 "ltc": crypto["litecoin"]["usd"],
                 "updated": datetime.now().strftime("%I:%M %p")
             }
