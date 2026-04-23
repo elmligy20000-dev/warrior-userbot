@@ -15,7 +15,7 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN', '8676300768:AAFa3i3qwy0vsfa-NAOKWrBgyKWT
 ADMIN_ID = int(os.environ.get('ADMIN_ID', '154919127'))
 DEVELOPER_USERNAME = os.environ.get('DEVELOPER_USERNAME', "devazf")
 MANDATORY_CHANNEL = os.environ.get('MANDATORY_CHANNEL', "@vip6705")
-HELP_PHOTO = os.environ.get('HELP_PHOTO', 'https://kommodo.ai/i/Ixum6fajzG8XTOUekxDi')
+HELP_PHOTO = os.environ.get('HELP_PHOTO', 'IMG_20260423_102854_326.jpg')
 DB_FILE = 'poster_data.json'
 MAX_ACCOUNTS = 5
 
@@ -44,17 +44,14 @@ def load_db():
         'subs': {str(ADMIN_ID): '2099-01-01'},
         'admins': [ADMIN_ID],
         'auto_reply': True,
-        'auto_reply_pm': False,
-        'auto_reply_text': f'تفضل خاص @{DEVELOPER_USERNAME}',
-        'auto_reply_pm_text': f'أهلاً بيك 🌚\nانا بوت نشر تلقائي\nللتواصل @{DEVELOPER_USERNAME}',
         'auto_reply_keywords': ['موجود', 'موجود؟', 'موجوده', 'فينك', 'وينك'],
         'auto_reply_keywords_enabled': True,
         'pending': {},
         'welcomed': [],
         'welcome_enabled': True,
         'welcome_text': '🌟 **أهلاً بيك في بوت النشر المطور**\n\n🚀 أسرع بوت نشر تلقائي على تليجرام\n⚡ نشر في مئات الجروبات بضغطة زر\n💎 مميزات احترافية\n\n👇 اختار من الأزرار تحت',
-        'welcome_photo': 'https://telegra.ph/file/8f8b4e1c4e8e8.jpg',
-        'start_photo': 'https://telegra.ph/file/8f8b4e1c4e8e8.jpg',
+        'welcome_photo': 'IMG_20260423_102854_326.jpg',
+        'start_photo': 'IMG_20260423_102854_326.jpg',
         'trial_users': [],
         'stats': {'total_sent': 0, 'start_time': str(datetime.now())}
     }
@@ -77,7 +74,9 @@ def get_account_template():
         'send_all': False,
         'banned_groups': [],
         'is_posting': False,
-        'name': 'حساب جديد'
+        'name': 'حساب جديد',
+        'reply_mention_text': f'تفضل خاص @{DEVELOPER_USERNAME}',
+        'reply_keyword_text': 'موجود يا غالي 🌚'
     }
 
 def get_user_data(uid):
@@ -197,7 +196,6 @@ def settings_menu(uid):
     status = "🟢 مربوط" if acc['session'] else "🔴 غير مربوط"
     mode = "📤 الكل" if acc['send_all'] else "🔄 تدوير"
     reply_group = "✅ مفعل" if db['auto_reply'] else "❌ معطل"
-    reply_pm = "✅ مفعل" if db['auto_reply_pm'] else "❌ معطل"
     keywords = "✅ مفعل" if db['auto_reply_keywords_enabled'] else "❌ معطل"
     welcome = "✅ مفعل" if db['welcome_enabled'] else "❌ معطل"
 
@@ -210,14 +208,13 @@ def settings_menu(uid):
         [Button.inline(f"📩 رسالة 3 ({acc['msg_stats'][2]})", b"msg_2"), Button.inline(f"📩 رسالة 4 ({acc['msg_stats'][3]})", b"msg_3")],
         [Button.inline(f"⏱️ وقت الجروب: {acc['sleep_time']}ث", b"set_sleep"), Button.inline(f"⏱️ وقت الرسالة: {acc['msg_delay']}ث", b"set_delay")],
         [Button.inline(mode, b"toggle_mode")],
-        [Button.inline(f"💬 رد الجروب: {reply_group}", b"toggle_reply"), Button.inline(f"📩 رد الخاص: {reply_pm}", b"toggle_reply_pm")],
-        [Button.inline(f"🔤 رد الكلمات: {keywords}", b"toggle_keywords")],
+        [Button.inline(f"💬 رد المنشن: {reply_group}", b"toggle_reply"), Button.inline(f"🔤 رد الكلمات: {keywords}", b"toggle_keywords")],
+        [Button.inline("💬 نص رد المنشن", b"edit_mention_reply"), Button.inline("🔤 نص رد الكلمات", b"edit_keyword_reply")],
     ]
 
     if is_admin(uid):
         btns.append([Button.inline(f"👋 الترحيب: {welcome}", b"toggle_welcome"), Button.inline("🖼️ صورة الترحيب", b"change_photo")])
-        btns.append([Button.inline("✏️ نص الترحيب", b"edit_welcome"), Button.inline("💬 نص رد الجروب", b"edit_reply")])
-        btns.append([Button.inline("📝 نص رد الخاص", b"edit_reply_pm"), Button.inline("🔤 كلمات الرد", b"edit_keywords")])
+        btns.append([Button.inline("✏️ نص الترحيب", b"edit_welcome"), Button.inline("🔤 كلمات الرد", b"edit_keywords")])
         btns.append([Button.inline("🖼️ صورة /start", b"change_start_photo")])
 
     if acc['is_posting']:
@@ -330,8 +327,7 @@ async def help_command(event):
 - 📩 4 رسائل مختلفة لكل حساب
 - 🔄 وضع التدوير أو نشر الكل
 - ⏱️ تحكم كامل في الأوقات
-- 💬 رد تلقائي على المنشن والكلمات
-- 📩 رد تلقائي في الخاص
+- 💬 رد تلقائي على المنشن والكلمات - كل حساب ليه نص منفصل
 - 🎁 تجربة مجانية ساعة
 - 💳 نظام اشتراكات متكامل
 
@@ -353,8 +349,7 @@ async def help_command(event):
 - 📩 ضيف 4 رسائل مختلفة لكل حساب
 - 🔄 اختار وضع التدوير أو نشر الكل
 - ⏱️ اظبط وقت الانتظار بين الجروبات
-- 💬 رد تلقائي على المنشن والكلمات
-- 📩 رد تلقائي في الخاص
+- 💬 رد تلقائي على المنشن والكلمات - نص خاص لكل حساب
 - 🎁 تجربة مجانية لمدة ساعة
 
 **💳 الاشتراك:**
@@ -403,6 +398,7 @@ async def callbacks(event):
     uid = event.sender_id
     data = event.data
     user = get_user_data(uid)
+    acc = get_active_account(uid)
 
     if data == b"back":
         await event.edit("🔙 القائمة الرئيسية", buttons=main_menu(uid))
@@ -479,8 +475,6 @@ async def callbacks(event):
                 await event.answer("🟢 بدأ النشر", alert=True)
             await event.edit(f"📱 **{acc['name']}**", buttons=account_control(uid, acc_id))
         return
-
-    acc = get_active_account(uid)
 
     if data == b"free_trial":
         if str(uid) in db['trial_users']:
@@ -632,15 +626,7 @@ async def callbacks(event):
         db['auto_reply'] = not db['auto_reply']
         save_db()
         status = "مفعل ✅" if db['auto_reply'] else "معطل ❌"
-        await event.answer(f"الرد في الجروب: {status}", alert=True)
-        await event.edit("⚙️ **الإعدادات**", buttons=settings_menu(uid))
-        return
-
-    if data == b"toggle_reply_pm":
-        db['auto_reply_pm'] = not db['auto_reply_pm']
-        save_db()
-        status = "مفعل ✅" if db['auto_reply_pm'] else "معطل ❌"
-        await event.answer(f"الرد في الخاص: {status}", alert=True)
+        await event.answer(f"الرد على المنشن: {status}", alert=True)
         await event.edit("⚙️ **الإعدادات**", buttons=settings_menu(uid))
         return
 
@@ -650,6 +636,20 @@ async def callbacks(event):
         status = "مفعل ✅" if db['auto_reply_keywords_enabled'] else "معطل ❌"
         await event.answer(f"الرد على الكلمات: {status}", alert=True)
         await event.edit("⚙️ **الإعدادات**", buttons=settings_menu(uid))
+        return
+
+    if data == b"edit_mention_reply":
+        if not acc:
+            return await event.answer("❌ اختار حساب أول", alert=True)
+        waiting_for[uid] = 'edit_mention_reply'
+        await event.edit(f"💬 **نص رد المنشن الحالي:**\n{acc['reply_mention_text']}\n\nابعت النص الجديد:")
+        return
+
+    if data == b"edit_keyword_reply":
+        if not acc:
+            return await event.answer("❌ اختار حساب أول", alert=True)
+        waiting_for[uid] = 'edit_keyword_reply'
+        await event.edit(f"🔤 **نص رد الكلمات الحالي:**\n{acc['reply_keyword_text']}\n\nابعت النص الجديد:")
         return
 
     if data == b"toggle_welcome":
@@ -683,20 +683,6 @@ async def callbacks(event):
         await event.edit(f"✏️ **النص الحالي:**\n{db['welcome_text']}\n\nابعت النص الجديد:")
         return
 
-    if data == b"edit_reply":
-        if not is_admin(uid):
-            return await event.answer("❌ للادمن فقط", alert=True)
-        waiting_for[uid] = 'edit_reply'
-        await event.edit(f"💬 **نص الرد في الجروب الحالي:**\n{db['auto_reply_text']}\n\nابعت النص الجديد:")
-        return
-
-    if data == b"edit_reply_pm":
-        if not is_admin(uid):
-            return await event.answer("❌ للادمن فقط", alert=True)
-        waiting_for[uid] = 'edit_reply_pm'
-        await event.edit(f"📝 **نص الرد في الخاص الحالي:**\n{db['auto_reply_pm_text']}\n\nابعت النص الجديد:")
-        return
-
     if data == b"edit_keywords":
         if not is_admin(uid):
             return await event.answer("❌ للادمن فقط", alert=True)
@@ -720,7 +706,7 @@ async def callbacks(event):
         await event.edit("⚙️ **الإعدادات**", buttons=settings_menu(uid))
         return
 
-    if data == b"admin":
+        if data == b"admin":
         if not is_admin(uid):
             return await event.answer("❌ للادمن فقط", alert=True)
         await event.edit("👑 **لوحة تحكم الأدمن**", buttons=admin_panel(uid))
@@ -903,18 +889,22 @@ async def handle_msg(event):
         await event.reply(f"✅ تم تحديث نص الترحيب")
         return
 
-    if step == 'edit_reply' and is_admin(uid):
-        db['auto_reply_text'] = text
+    if step == 'edit_mention_reply':
+        if not acc:
+            return await event.reply("❌ اختار حساب أول")
+        acc['reply_mention_text'] = text
         save_db()
         del waiting_for[uid]
-        await event.reply(f"✅ تم تحديث نص الرد في الجروب")
+        await event.reply(f"✅ تم تحديث نص رد المنشن")
         return
 
-    if step == 'edit_reply_pm' and is_admin(uid):
-        db['auto_reply_pm_text'] = text
+    if step == 'edit_keyword_reply':
+        if not acc:
+            return await event.reply("❌ اختار حساب أول")
+        acc['reply_keyword_text'] = text
         save_db()
         del waiting_for[uid]
-        await event.reply(f"✅ تم تحديث نص الرد في الخاص")
+        await event.reply(f"✅ تم تحديث نص رد الكلمات")
         return
 
     if step == 'edit_keywords' and is_admin(uid):
@@ -1162,41 +1152,40 @@ async def start_posting_uid(uid, acc_id):
 # --- الرد التلقائي ---
 @bot.on(events.NewMessage(incoming=True))
 async def auto_reply(event):
-    # للجروبات
-    if event.is_group:
+    if not event.is_group:
+        return
+
+    try:
+        me = await event.client.get_me()
+
+        # دور على أي حساب من الحسابات المربوطة
+        target_acc = None
+        for uid, user_data in db['users'].items():
+            for acc_id, acc in user_data['accounts'].items():
+                if acc.get('username') and acc['username'].lower() == me.username.lower():
+                    target_acc = acc
+                    break
+            if target_acc:
+                break
+
+        if not target_acc:
+            return
+
         # الرد على المنشن
         if db['auto_reply']:
-            try:
-                if event.client:
-                    me = await event.client.get_me()
-                    if me and me.username and f"@{me.username.lower()}" in (event.raw_text or "").lower():
-                        await event.reply(db['auto_reply_text'])
-                        return
-            except:
-                pass
+            if me and me.username and f"@{me.username.lower()}" in (event.raw_text or "").lower():
+                await event.reply(target_acc['reply_mention_text'])
+                return
 
         # الرد على الكلمات
         if db['auto_reply_keywords_enabled']:
-            try:
-                msg_text = (event.raw_text or "").lower().strip()
-                for keyword in db['auto_reply_keywords']:
-                    if keyword.lower() in msg_text:
-                        await event.reply(db['auto_reply_text'])
-                        break
-            except:
-                pass
-
-    # للخاص
-    else:
-        if not db['auto_reply_pm']:
-            return
-        try:
-            if event.sender_id == (await event.client.get_me()).id:
-                return
-            if event.is_private and not event.out:
-                await event.reply(db['auto_reply_pm_text'])
-        except:
-            pass
+            msg_text = (event.raw_text or "").lower().strip()
+            for keyword in db['auto_reply_keywords']:
+                if keyword.lower() in msg_text:
+                    await event.reply(target_acc['reply_keyword_text'])
+                    break
+    except:
+        pass
 
 async def main():
     await bot.start(bot_token=BOT_TOKEN)
