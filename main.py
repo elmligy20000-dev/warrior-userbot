@@ -2,7 +2,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 import asyncio, os, aiohttp
 from datetime import datetime
-import motor.motor_asyncio
+from pymongo import MongoClient
 
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
@@ -10,92 +10,75 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 MONGO_URI = os.environ.get("MONGO_URI")
 
 app = Client("currency_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-mongo = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
+mongo = MongoClient(MONGO_URI)
 db = mongo.currency_bot
 alerts = db.alerts
 
 cache = {"time": None, "data": None}
 
 CURRENCY_NAMES = {
-    "usd": "دولار أمريكي 🇺🇸",
-    "eur": "يورو 🇪🇺",
-    "sar": "ريال سعودي 🇸🇦",
-    "aed": "درهم إماراتي 🇦🇪",
-    "kwd": "دينار كويتي 🇰🇼",
-    "qar": "ريال قطري 🇶🇦",
-    "omr": "ريال عماني 🇴🇲",
-    "bhd": "دينار بحريني 🇧🇭",
-    "jod": "دينار أردني 🇯🇴",
-    "iqd": "دينار عراقي 🇮🇶",
-    "gbp": "جنيه استرليني 🇬🇧",
-    "chf": "فرنك سويسري 🇨🇭",
-    "jpy": "ين ياباني 🇯🇵",
-    "cad": "دولار كندي 🇨🇦",
-    "aud": "دولار استرالي 🇦🇺",
-    "cny": "يوان صيني 🇨🇳",
-    "try": "ليرة تركي 🇹🇷",
-    "inr": "روبية هندي 🇮🇳",
-    "pkr": "روبية باكستاني 🇵🇰",
-    "myr": "رينغيت ماليزي 🇲🇾"
+    "usd": "دولار أمريكي 🇺🇸", "eur": "يورو 🇪🇺", "sar": "ريال سعودي 🇸🇦",
+    "aed": "درهم إماراتي 🇦🇪", "kwd": "دينار كويتي 🇰🇼", "qar": "ريال قطري 🇶🇦",
+    "omr": "ريال عماني 🇴🇲", "bhd": "دينار بحريني 🇧🇭", "jod": "دينار أردني 🇯🇴",
+    "iqd": "دينار عراقي 🇮🇶", "gbp": "جنيه استرليني 🇬🇧", "chf": "فرنك سويسري 🇨🇭",
+    "jpy": "ين ياباني 🇯🇵", "cad": "دولار كندي 🇨🇦", "aud": "دولار استرالي 🇦🇺",
+    "cny": "يوان صيني 🇨🇳", "try": "ليرة تركي 🇹🇷", "inr": "روبية هندي 🇮🇳",
+    "pkr": "روبية باكستاني 🇵🇰", "myr": "رينغيت ماليزي 🇲🇾"
 }
 
 async def get_prices():
     if cache["time"] and (datetime.now() - cache["time"]).seconds < 60:
         return cache["data"]
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get("https://api.exchangerate-api.com/v4/latest/USD") as r:
-            forex = await r.json()
-            rates = forex["rates"]
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://api.exchangerate-api.com/v4/latest/USD") as r:
+                forex = await r.json()
+                rates = forex["rates"]
 
-        async with session.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,toncoin,litecoin&vs_currencies=usd") as r:
-            crypto = await r.json()
+            async with session.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,toncoin,litecoin&vs_currencies=usd") as r:
+                crypto = await r.json()
 
-        async with session.get("https://api.metals.live/v1/spot/gold") as r:
-            gold_data = await r.json()
-            gold_ounce_usd = gold_data[0]["price"]
-            gold_gram_21_egp = (gold_ounce_usd / 31.1035) * 0.875 * rates["EGP"]
+            data = {
+                "usd": round(rates["EGP"], 2), "eur": round(rates["EGP"] / rates["EUR"], 2),
+                "sar": round(rates["EGP"] / rates["SAR"], 2), "aed": round(rates["EGP"] / rates["AED"], 2),
+                "kwd": round(rates["EGP"] / rates["KWD"], 2), "qar": round(rates["EGP"] / rates["QAR"], 2),
+                "omr": round(rates["EGP"] / rates["OMR"], 2), "bhd": round(rates["EGP"] / rates["BHD"], 2),
+                "jod": round(rates["EGP"] / rates["JOD"], 2), "iqd": round(rates["EGP"] / rates["IQD"], 4),
+                "gbp": round(rates["EGP"] / rates["GBP"], 2), "chf": round(rates["EGP"] / rates["CHF"], 2),
+                "jpy": round(rates["EGP"] / rates["JPY"], 4), "cad": round(rates["EGP"] / rates["CAD"], 2),
+                "aud": round(rates["EGP"] / rates["AUD"], 2), "cny": round(rates["EGP"] / rates["CNY"], 2),
+                "try": round(rates["EGP"] / rates["TRY"], 2), "inr": round(rates["EGP"] / rates["INR"], 2),
+                "pkr": round(rates["EGP"] / rates["PKR"], 2), "myr": round(rates["EGP"] / rates["MYR"], 2),
+                "btc": crypto["bitcoin"]["usd"], "eth": crypto["ethereum"]["usd"],
+                "usdt": crypto["tether"]["usd"], "ton": crypto["toncoin"]["usd"],
+                "ltc": crypto["litecoin"]["usd"],
+                "updated": datetime.now().strftime("%I:%M %p")
+            }
 
-        data = {
-            "usd": round(rates["EGP"], 2),
-            "eur": round(rates["EGP"] / rates["EUR"], 2),
-            "sar": round(rates["EGP"] / rates["SAR"], 2),
-            "aed": round(rates["EGP"] / rates["AED"], 2),
-            "kwd": round(rates["EGP"] / rates["KWD"], 2),
-            "qar": round(rates["EGP"] / rates["QAR"], 2),
-            "omr": round(rates["EGP"] / rates["OMR"], 2),
-            "bhd": round(rates["EGP"] / rates["BHD"], 2),
-            "jod": round(rates["EGP"] / rates["JOD"], 2),
-            "iqd": round(rates["EGP"] / rates["IQD"], 4),
-            "gbp": round(rates["EGP"] / rates["GBP"], 2),
-            "chf": round(rates["EGP"] / rates["CHF"], 2),
-            "jpy": round(rates["EGP"] / rates["JPY"], 4),
-            "cad": round(rates["EGP"] / rates["CAD"], 2),
-            "aud": round(rates["EGP"] / rates["AUD"], 2),
-            "cny": round(rates["EGP"] / rates["CNY"], 2),
-            "try": round(rates["EGP"] / rates["TRY"], 2),
-            "inr": round(rates["EGP"] / rates["INR"], 2),
-            "pkr": round(rates["EGP"] / rates["PKR"], 2),
-            "myr": round(rates["EGP"] / rates["MYR"], 2),
-            "btc": crypto["bitcoin"]["usd"],
-            "eth": crypto["ethereum"]["usd"],
-            "usdt": crypto["tether"]["usd"],
-            "ton": crypto["toncoin"]["usd"],
-            "ltc": crypto["litecoin"]["usd"],
-            "gold21": round(gold_gram_21_egp, 2),
-            "updated": datetime.now().strftime("%I:%M %p")
+            cache["time"] = datetime.now()
+            cache["data"] = data
+            return data
+            
+    except Exception as e:
+        print(f"Error fetching prices: {e}")
+        if cache["data"]:
+            return cache["data"]
+        return {
+            "usd": 48.5, "eur": 52.0, "sar": 12.9, "aed": 13.2, "kwd": 158.0,
+            "qar": 13.3, "omr": 126.0, "bhd": 128.5, "jod": 68.4, "iqd": 0.037,
+            "gbp": 61.0, "chf": 54.0, "jpy": 0.32, "cad": 35.5, "aud": 31.8,
+            "cny": 6.7, "try": 1.5, "inr": 0.58, "pkr": 0.17, "myr": 10.8,
+            "btc": 65000, "eth": 3200, "usdt": 1, "ton": 5.5, "ltc": 70,
+            "updated": "Offline"
         }
-
-        cache["time"] = datetime.now()
-        cache["data"] = data
-        return data
 
 async def check_alerts():
     while True:
         await asyncio.sleep(60)
         try:
             data = await get_prices()
-            async for alert in alerts.find({}):
+            for alert in alerts.find({}):
                 user_id = alert["user_id"]
                 currency = alert["currency"]
                 target = alert["target"]
@@ -114,7 +97,7 @@ async def check_alerts():
                 if triggered:
                     try:
                         await app.send_message(user_id, text)
-                        await alerts.delete_one({"_id": alert["_id"]})
+                        alerts.delete_one({"_id": alert["_id"]})
                     except: pass
         except Exception as e:
             print(f"Alert Error: {e}")
@@ -127,26 +110,16 @@ async def start(client, message: Message):
 **الأوامر الأساسية:**
 `اسعار` - كل الأسعار المهمة
 `عملات` - كل العملات العربية والأجنبية
-`دولار` - سعر الدولار
-`يورو` - سعر اليورو
-`ريال` - سعر الريال السعودي
-`درهم` - سعر الدرهم الإماراتي
-`دينار` - سعر الدينار الكويتي
-`عراقي` - سعر الدينار العراقي
+`دولار` `يورو` `ريال` `درهم` `دينار` `عراقي`
 `رصيد` - أسعار رصيد آسياسيل وزين
-`ذهب` - سعر الذهب
-`بيتكوين` - سعر البيتكوين
-`لايت` - سعر اللايتكوين
-`تون` - سعر TON
+`بيتكوين` `لايت` `تون` `ايث`
 
 **🔔 التنبيهات:**
-`تنبيه دولار 50`
-`تنبيه يورو 55`
-`تنبيه دينار 160`
+`تنبيه دولار 50` `تنبيه يورو 55`
 `تنبيهاتي` - عرض تنبيهاتك
 `حذف التنبيهات` - حذف الكل
 
-اكتب `سعر الدولار` أو `بكام اليورو` وهيرد عليك 👇
+اكتب `سعر الدولار` وهيرد عليك 👇
 """
     btn = InlineKeyboardMarkup([
         [InlineKeyboardButton("💵 أهم الأسعار", callback_data="all_prices")],
@@ -179,8 +152,6 @@ async def all_prices_cmd(client, message: Message):
 دينار كويتي: `{data['kwd']} جنيه`
 دينار عراقي: `{data['iqd']} جنيه`
 
-**🥇 الذهب عيار 21:** `{data['gold21']} جنيه`
-
 **₿ الكريبتو:**
 بيتكوين: `${data['btc']:,}`
 ايثريوم: `${data['eth']:,}`
@@ -188,7 +159,6 @@ async def all_prices_cmd(client, message: Message):
 تون: `${data['ton']}`
 
 ⏰ **آخر تحديث:** {data['updated']}
-اكتب `عملات` لعرض كل العملات
 """
     await msg.edit(text)
 
@@ -197,8 +167,7 @@ async def all_currencies_cmd(client, message: Message):
     msg = await message.reply("⏳ جاري جلب كل العملات...")
     data = await get_prices()
 
-    text = "🌍 **أسعار كل العملات مقابل الجنيه**\n\n"
-    text += "**💵 العملات العربية:**\n"
+    text = "🌍 **أسعار كل العملات مقابل الجنيه**\n\n**💵 العملات العربية:**\n"
     for code in ["usd", "eur", "sar", "aed", "kwd", "qar", "omr", "bhd", "jod", "iqd"]:
         text += f"{CURRENCY_NAMES[code]}: `{data[code]} جنيه`\n"
 
@@ -274,23 +243,6 @@ async def iraq_balance(client, message: Message):
 """
     await message.reply(text)
 
-@app.on_message(filters.command(["ذهب", "دهب"]))
-async def gold_price(client, message: Message):
-    msg = await message.reply("⏳ جاري جلب سعر الذهب...")
-    data = await get_prices()
-    gold24 = round(data['gold21'] / 0.875, 2)
-    gold18 = round(data['gold21'] * 0.857, 2)
-    text = f"""
-🥇 **أسعار الذهب اليوم**
-
-**عيار 24:** `{gold24} جنيه`
-**عيار 21:** `{data['gold21']} جنيه`
-**عيار 18:** `{gold18} جنيه`
-
-⏰ **آخر تحديث:** {data['updated']}
-"""
-    await msg.edit(text)
-
 @app.on_message(filters.command(["بيتكوين", "btc"]))
 async def btc_price(client, message: Message):
     data = await get_prices()
@@ -309,6 +261,12 @@ async def ton_price(client, message: Message):
     ton_egp = round(data['ton'] * data['usd'], 2)
     await message.reply(f"💎 **TON:** `${data['ton']}` = `{ton_egp} جنيه`\n⏰ {data['updated']}")
 
+@app.on_message(filters.command(["ايث", "eth", "ايثريوم"]))
+async def eth_price(client, message: Message):
+    data = await get_prices()
+    eth_egp = round(data['eth'] * data['usd'], 0)
+    await message.reply(f"💎 **ايثريوم:** `${data['eth']:,}` = `{eth_egp:,} جنيه`\n⏰ {data['updated']}")
+
 @app.on_message(filters.command(["تنبيه"]))
 async def set_alert(client, message: Message):
     if len(message.command) < 3:
@@ -316,20 +274,16 @@ async def set_alert(client, message: Message):
 
     currency_input = message.command[1].lower()
     currency_map = {
-        "دولار": "usd", "usd": "usd",
-        "يورو": "eur", "eur": "eur",
-        "ريال": "sar", "sar": "sar",
-        "درهم": "aed", "aed": "aed",
-        "دينار": "kwd", "kwd": "kwd",
-        "عراقي": "iqd", "iqd": "iqd",
-        "استرليني": "gbp", "gbp": "gbp",
-        "تون": "ton", "ton": "ton",
+        "دولار": "usd", "usd": "usd", "يورو": "eur", "eur": "eur",
+        "ريال": "sar", "sar": "sar", "درهم": "aed", "aed": "aed",
+        "دينار": "kwd", "kwd": "kwd", "عراقي": "iqd", "iqd": "iqd",
+        "استرليني": "gbp", "gbp": "gbp", "تون": "ton", "ton": "ton",
         "لايت": "ltc", "ltc": "ltc", "لايتكوين": "ltc",
-        "بيتكوين": "btc", "btc": "btc"
+        "بيتكوين": "btc", "btc": "btc", "ايث": "eth", "eth": "eth"
     }
 
     if currency_input not in currency_map:
-        return await message.reply("❌ **العملات المتاحة:** دولار، يورو، ريال، درهم، دينار، عراقي، استرليني، تون، لايت، بيتكوين")
+        return await message.reply("❌ **العملات المتاحة:** دولار، يورو، ريال، درهم، دينار، عراقي، استرليني، تون، لايت، بيتكوين، ايث")
 
     try:
         target = float(message.command[2])
@@ -341,7 +295,7 @@ async def set_alert(client, message: Message):
     current = data[currency_key]
     condition = "above" if target > current else "below"
 
-    await alerts.insert_one({
+    alerts.insert_one({
         "user_id": message.from_user.id,
         "currency": currency_key,
         "target": target,
@@ -355,7 +309,7 @@ async def set_alert(client, message: Message):
 @app.on_message(filters.command(["تنبيهاتي"]))
 async def my_alerts(client, message: Message):
     user_alerts = []
-    async for alert in alerts.find({"user_id": message.from_user.id}):
+    for alert in alerts.find({"user_id": message.from_user.id}):
         direction = "⬆️ أعلى من" if alert["condition"] == "above" else "⬇️ أقل من"
         name = CURRENCY_NAMES.get(alert['currency'], alert['currency'].upper())
         user_alerts.append(f"• {name} {direction} `{alert['target']}`")
@@ -369,14 +323,14 @@ async def my_alerts(client, message: Message):
 @app.on_message(filters.command(["حذف"]))
 async def delete_alerts(client, message: Message):
     if len(message.command) > 1 and message.command[1] == "التنبيهات":
-        result = await alerts.delete_many({"user_id": message.from_user.id})
+        result = alerts.delete_many({"user_id": message.from_user.id})
         await message.reply(f"✅ **تم حذف {result.deleted_count} تنبيه**")
 
 @app.on_message(filters.text & ~filters.command([]))
 async def text_prices(client, message: Message):
     text = message.text.lower().strip()
 
-    commands = ['start', 'اسعار', 'عملات', 'دولار', 'يورو', 'ريال', 'درهم', 'دينار', 'عراقي', 'رصيد', 'استرليني', 'ذهب', 'دهب', 'بيتكوين', 'لايت', 'تون', 'تنبيه', 'تنبيهاتي', 'حذف']
+    commands = ['start', 'اسعار', 'عملات', 'دولار', 'يورو', 'ريال', 'درهم', 'دينار', 'عراقي', 'رصيد', 'استرليني', 'بيتكوين', 'لايت', 'تون', 'ايث', 'تنبيه', 'تنبيهاتي', 'حذف']
     if any(text == cmd or text.startswith(cmd + ' ') for cmd in commands):
         return
 
@@ -413,8 +367,6 @@ async def buttons(client, callback_query):
 دولار: `{data['usd']}` | يورو: `{data['eur']}`
 ريال: `{data['sar']}` | درهم: `{data['aed']}`
 دينار: `{data['kwd']}` | عراقي: `{data['iqd']}`
-
-**🥇 الذهب 21:** `{data['gold21']} جنيه`
 
 **₿ الكريبتو:**
 بيتكوين: `${data['btc']:,}`
