@@ -655,7 +655,7 @@ async def callbacks(event):
     if data == b"edit_mention_reply":
         if not acc:
             return await event.answer("❌ اختار حساب أول", alert=True)
-                waiting_for[uid] = 'edit_mention_reply'
+            waiting_for[uid] = 'edit_mention_reply'
         await event.edit(f"💬 **نص رد المنشن الحالي:**\n{acc['reply_mention_text']}\n\nابعت النص الجديد:")
         return
 
