@@ -8,7 +8,6 @@ from telethon.sessions import StringSession
 from telethon.tl.types import Channel, Chat
 from telethon.errors import UserNotParticipantError, FloodWaitError, PhoneCodeInvalidError
 
-# --- الإعدادات الأساسية من المتغيرات ---
 API_ID = int(os.environ.get('API_ID', '33595004'))
 API_HASH = os.environ.get('API_HASH', 'cbd1066ed026997f2f4a7c4323b7bda7')
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8676300768:AAFa3i3qwy0vsfa-NAOKWrBgyKWTxXYIjEs')
@@ -19,7 +18,6 @@ HELP_PHOTO = os.environ.get('HELP_PHOTO', 'IMG_20260423_102854_326.jpg')
 DB_FILE = 'poster_data.json'
 MAX_ACCOUNTS = 5
 
-# --- أسعار الاشتراك ---
 PRICE_PACKAGES = {
     '1_day': {'days': 1, 'price': '0.5$ - 25 جنية', 'label': 'يوم واحد'},
     '7_days': {'days': 7, 'price': '2$ - 70 جنية', 'label': '7 أيام'},
@@ -34,7 +32,6 @@ PAYMENT_INFO = {
     'usdt': 'TWunFGpcDDc63GTDdNxyDHjZ4VdPS6AsMh'
 }
 
-# --- نظام الحفظ ---
 def load_db():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, 'r', encoding='utf-8') as f:
@@ -49,7 +46,7 @@ def load_db():
         'pending': {},
         'welcomed': [],
         'welcome_enabled': True,
-        'welcome_text': '🌟 **أهلاً بيك في بوت النشر المطور**\n\n🚀 أسرع بوت نشر تلقائي على تليجرام\n⚡ نشر في مئات الجروبات بضغطة زر\n💎 مميزات احترافية\n\n👇 اختار من الأزرار تحت',
+        'welcome_text': '🌟 **أهلاً بيك في بوت النشر المطور**\n\n🚀 أسرع بوت نشر تلقائي على تليجرام\n⚡ نشر في مئات الجروبات بضغطة زر\n💎 مميزات احترافية\n👇 اختار من الأزرار تحت',
         'welcome_photo': 'IMG_20260423_102854_326.jpg',
         'start_photo': 'IMG_20260423_102854_326.jpg',
         'trial_users': [],
@@ -100,7 +97,6 @@ bot = TelegramClient('PosterBot', API_ID, API_HASH)
 waiting_for = {}
 login_sessions = {}
 
-# --- دوال مساعدة ---
 def is_admin(uid):
     return uid in db['admins']
 
@@ -136,7 +132,6 @@ def get_uptime():
     minutes = (diff.seconds % 3600) // 60
     return f"{days} يوم, {hours} ساعة, {minutes} دقيقة"
 
-# --- القوائم ---
 def main_menu(uid):
     btns = [
         [Button.inline("🔑 إدارة الحسابات", b"accounts")],
@@ -246,10 +241,10 @@ def payment_methods(pkg_key):
         [Button.inline(f"💎 USDT TRC20", f"method_usdt_{pkg_key}".encode())],
         [Button.inline(f"💎 Litecoin", f"method_ltc_{pkg_key}".encode())],
         [Button.inline(f"💎 Toncoin", f"method_ton_{pkg_key}".encode())],
+        [Button.inline("🔔 دفعت - إشعار المطور", f"notify_{pkg_key}".encode())],
         [Button.inline("🔙 رجوع", b"pay_menu")]
     ]
 
-# --- أوامر البوت ---
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
     uid = event.sender_id
@@ -519,6 +514,25 @@ async def callbacks(event):
         await event.edit(msg, buttons=[[Button.inline("🔙 رجوع", b"pay_menu")]])
         return
 
+    if data.startswith(b'notify_'):
+        pkg_key = data.decode().replace('notify_', '')
+        pkg = PRICE_PACKAGES[pkg_key]
+
+        admin_msg = f"🔔 **إشعار دفع جديد**\n\n"
+        admin_msg += f"👤 المستخدم: `{uid}`\n"
+        admin_msg += f"📛 الاسم: {event.sender.first_name}\n"
+        admin_msg += f"📦 الباقة: {pkg['label']}\n"
+        admin_msg += f"💵 السعر: {pkg['price']}\n"
+        admin_msg += f"🆔 اليوزر: @{event.sender.username if event.sender.username else 'مفيش'}\n\n"
+        admin_msg += f"لتفعيل: `/activate {uid} {pkg_key}`"
+
+        try:
+            await bot.send_message(ADMIN_ID, admin_msg)
+            await event.answer("✅ تم إرسال إشعار للمطور\nهيتواصل معاك قريب", alert=True)
+        except:
+            await event.answer("❌ فشل الإرسال، كلم المطور مباشر", alert=True)
+        return
+
     if data == b"settings":
         if not is_sub(uid):
             return await event.answer("❌ لازم تشترك أول", alert=True)
@@ -641,7 +655,7 @@ async def callbacks(event):
     if data == b"edit_mention_reply":
         if not acc:
             return await event.answer("❌ اختار حساب أول", alert=True)
-        waiting_for[uid] = 'edit_mention_reply'
+                waiting_for[uid] = 'edit_mention_reply'
         await event.edit(f"💬 **نص رد المنشن الحالي:**\n{acc['reply_mention_text']}\n\nابعت النص الجديد:")
         return
 
@@ -1080,7 +1094,6 @@ async def handle_msg(event):
         await event.reply(f"✅ **تمت الإذاعة**\n\n📤 نجح: `{count}`\n❌ فشل: `{fail}`")
         return
 
-# --- النشر التلقائي ---
 async def start_posting_uid(uid, acc_id):
     user = get_user_data(uid)
     acc = user['accounts'][acc_id]
@@ -1149,7 +1162,6 @@ async def start_posting_uid(uid, acc_id):
         save_db()
         await bot.send_message(uid, f"🔴 توقف النشر - {acc['name']}")
 
-# --- الرد التلقائي ---
 @bot.on(events.NewMessage(incoming=True))
 async def auto_reply(event):
     if not event.is_group:
@@ -1158,7 +1170,6 @@ async def auto_reply(event):
     try:
         me = await event.client.get_me()
 
-        # دور على أي حساب من الحسابات المربوطة
         target_acc = None
         for uid, user_data in db['users'].items():
             for acc_id, acc in user_data['accounts'].items():
@@ -1171,13 +1182,11 @@ async def auto_reply(event):
         if not target_acc:
             return
 
-        # الرد على المنشن
         if db['auto_reply']:
             if me and me.username and f"@{me.username.lower()}" in (event.raw_text or "").lower():
                 await event.reply(target_acc['reply_mention_text'])
                 return
 
-        # الرد على الكلمات
         if db['auto_reply_keywords_enabled']:
             msg_text = (event.raw_text or "").lower().strip()
             for keyword in db['auto_reply_keywords']:
