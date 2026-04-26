@@ -69,6 +69,19 @@ def get_trial_hours_left(uid):
     except:
         return 0
 
+def is_subscribed(uid):
+    if uid == ADMIN_ID:
+        return True
+    user = get_user_data(uid)
+    sub_end = user.get('subscription_end')
+    if sub_end and isinstance(sub_end, str):
+        try:
+            if datetime.fromisoformat(sub_end) > datetime.now():
+                return True
+        except:
+            pass
+    return is_trial(uid) # لو عنده تجربة يبقى مشترك
+
 def get_sub_days_left(uid):
     if uid == ADMIN_ID:
         return 9999
