@@ -81,8 +81,6 @@ def get_sub_days_left(uid):
         return max(0, delta.days)
     except:
         return 0
-    delta = datetime.fromisoformat(sub_end) - datetime.now()
-    return max(0, delta.days)
 
 def add_subscription_days(uid, days):
     user = get_user_data(uid)
