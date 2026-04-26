@@ -47,43 +47,39 @@ def get_user_data(uid):
 
 def is_trial(uid):
     user = get_user_data(uid)
-    if 'trial_end' not in user:
+    trial_end = user.get('trial_end')
+    if not trial_end or not isinstance(trial_end, str):
         return False
-    return datetime.now() < datetime.fromisoformat(user['trial_end'])
+    try:
+        return datetime.now() < datetime.fromisoformat(trial_end)
+    except:
+        return False
 
 def get_trial_hours_left(uid):
     user = get_user_data(uid)
-    if 'trial_end' not in user:
+    trial_end = user.get('trial_end')
+    if not trial_end or not isinstance(trial_end, str):
         return 0
-    end = datetime.fromisoformat(user['trial_end'])
-    if datetime.now() >= end:
+    try:
+        end = datetime.fromisoformat(trial_end)
+        if datetime.now() >= end:
+            return 0
+        delta = end - datetime.now()
+        return round(delta.total_seconds() / 3600, 1)
+    except:
         return 0
-    delta = end - datetime.now()
-    return round(delta.total_seconds() / 3600, 1)
-
-def start_trial(uid):
-    user = get_user_data(uid)
-    if 'trial_end' in user:
-        return False
-    user['trial_end'] = (datetime.now() + timedelta(hours=12)).isoformat()
-    save_db()
-    return True
-
-def is_subscribed(uid):
-    if uid == ADMIN_ID:
-        return True
-    user = get_user_data(uid)
-    sub_end = user.get('subscription_end')
-    if sub_end and datetime.fromisoformat(sub_end) > datetime.now():
-        return True
-    return is_trial(uid)
 
 def get_sub_days_left(uid):
     if uid == ADMIN_ID:
         return 9999
     user = get_user_data(uid)
     sub_end = user.get('subscription_end')
-    if not sub_end:
+    if not sub_end or not isinstance(sub_end, str):
+        return 0
+    try:
+        delta = datetime.fromisoformat(sub_end) - datetime.now()
+        return max(0, delta.days)
+    except:
         return 0
     delta = datetime.fromisoformat(sub_end) - datetime.now()
     return max(0, delta.days)
