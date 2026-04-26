@@ -45,22 +45,21 @@ def get_user_data(uid):
         }
     return db['users'][uid]
 
-def start_trial(uid):
+def is_trial(uid): # ⬅️ دي اللي ناقصة
     user = get_user_data(uid)
     trial_end = user.get('trial_end')
-    # لو في تاريخ وانتهى او لسه شغال = استخدمها قبل كده
-    if trial_end:
-        try:
-            if datetime.fromisoformat(trial_end) > datetime.now():
-                return False # لسه شغالة
-            else:
-                return False # كانت شغالة وخلصت
-        except:
-            pass
-    # لو مفيش trial_end اصلا = اول مرة
-    user['trial_end'] = (datetime.now() + timedelta(hours=12)).isoformat()
-    save_db()
-    return True
+    if not trial_end or not isinstance(trial_end, str):
+        return False
+    try:
+        return datetime.now() < datetime.fromisoformat(trial_end)
+    except:
+        return False
+
+def get_trial_hours_left(uid):
+    user = get_user_data(uid)
+    trial_end = user.get('trial_end')
+    if not trial_end or not isinstance(trial_end, str):
+        return 0
     try:
         end = datetime.fromisoformat(trial_end)
         if datetime.now() >= end:
@@ -69,6 +68,15 @@ def start_trial(uid):
         return round(delta.total_seconds() / 3600, 1)
     except:
         return 0
+
+def start_trial(uid):
+    user = get_user_data(uid)
+    trial_end = user.get('trial_end')
+    if trial_end: # لو عنده اي تاريخ يبقى استخدمها
+        return False
+    user['trial_end'] = (datetime.now() + timedelta(hours=12)).isoformat()
+    save_db()
+    return True
 
 def is_subscribed(uid):
     if uid == ADMIN_ID:
@@ -81,7 +89,7 @@ def is_subscribed(uid):
                 return True
         except:
             pass
-    return is_trial(uid) # لو عنده تجربة يبقى مشترك
+    return is_trial(uid)
 
 def get_sub_days_left(uid):
     if uid == ADMIN_ID:
@@ -90,6 +98,13 @@ def get_sub_days_left(uid):
     sub_end = user.get('subscription_end')
     if not sub_end or not isinstance(sub_end, str):
         return 0
+    try:
+        delta = datetime.fromisoformat(sub_end) - datetime.now()
+        return max(0, delta.days)
+    except:
+        return 0
+
+async def start(event): # ⬅️ دي لازم تبقى اخر واحدة
     try:
         delta = datetime.fromisoformat(sub_end) - datetime.now()
         return max(0, delta.days)
