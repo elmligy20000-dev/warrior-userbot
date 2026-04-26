@@ -10,11 +10,10 @@ from telethon.errors import UserNotParticipantError, FloodWaitError, PhoneCodeIn
 
 API_ID = int(os.environ.get('API_ID', '33595004'))
 API_HASH = os.environ.get('API_HASH', 'cbd1066ed026997f2f4a7c4323b7bda7')
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '8676300768:AAFfgsNeQ6X6ZKS5zQbFntTVe-ulptOU0Bg')
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8676300768:AAGhhZ9l8GmcNaJ0ioaa7rXZuYNhyjoANMM')
 ADMIN_ID = int(os.environ.get('ADMIN_ID', '154919127'))
 DEVELOPER_USERNAME = os.environ.get('DEVELOPER_USERNAME', "devazf")
 MANDATORY_CHANNEL = os.environ.get('MANDATORY_CHANNEL', "@vip6705")
-HELP_PHOTO = os.environ.get('HELP_PHOTO', 'IMG_20260423_102854_326.jpg')
 DB_FILE = 'poster_data.json'
 BACKUP_FILE = 'sessions_backup.json'
 MAX_ACCOUNTS = 5
