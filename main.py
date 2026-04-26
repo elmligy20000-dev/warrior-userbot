@@ -1,19 +1,18 @@
+from telethon import TelegramClient, events, Button
+from telethon.errors import SessionPasswordNeededError, UserNotParticipantError
+from telethon.tl.functions.channels import GetParticipantRequest
 import asyncio
 import json
-import base64
+import os
 from datetime import datetime, timedelta
-from telethon import TelegramClient, events, Button
-from telethon.sessions import StringSession
-from telethon.errors import *
-from telethon.tl.types import MessageEntityCustomEmoji
-import io
+import random
+import string
 
 API_ID = 33595004
 API_HASH = "cbd1066ed026997f2f4a7c4323b7bda7"
 BOT_TOKEN = "8676300768:AAGhhZ9l8GmcNaJ0ioaa7rXZuYNhyjoANMM"
 ADMIN_ID = 154919127
 ADMIN_USERNAME = "@Devazf"
-
 REQUIRED_CHANNELS = ['@vip6705']
 DB_FILE = 'database.json'
 
@@ -39,13 +38,13 @@ def get_user_data(uid):
     if uid not in db['users']:
         db['users'][uid] = {
             'subscription_end': None,
-            'trial_end': None,
             'accounts': {},
             'current_account': None
+            # شيلنا 'trial_end' من الـ default خالص
         }
     return db['users'][uid]
 
-def is_trial(uid): # ⬅️ دي اللي ناقصة
+def is_trial(uid):
     user = get_user_data(uid)
     trial_end = user.get('trial_end')
     if not trial_end or not isinstance(trial_end, str):
@@ -71,8 +70,7 @@ def get_trial_hours_left(uid):
 
 def start_trial(uid):
     user = get_user_data(uid)
-    trial_end = user.get('trial_end')
-    if trial_end: # لو عنده اي تاريخ يبقى استخدمها
+    if 'trial_end' in user: # لو المفتاح موجود يبقى استخدمها قبل كده
         return False
     user['trial_end'] = (datetime.now() + timedelta(hours=12)).isoformat()
     save_db()
@@ -104,41 +102,11 @@ def get_sub_days_left(uid):
     except:
         return 0
 
-async def start(event): # ⬅️ دي لازم تبقى اخر واحدة
-    try:
-        delta = datetime.fromisoformat(sub_end) - datetime.now()
-        return max(0, delta.days)
-    except:
-        return 0
-
-def add_subscription_days(uid, days):
-    user = get_user_data(uid)
-    now = datetime.now()
-    current_end = user.get('subscription_end')
-    if current_end and datetime.fromisoformat(current_end) > now:
-        new_end = datetime.fromisoformat(current_end) + timedelta(days=days)
-    else:
-        new_end = now + timedelta(days=days)
-    user['subscription_end'] = new_end.isoformat()
-    save_db()
-    return new_end
-
-def generate_code(days):
-    import random
-    import string
-    code = 'AZEF-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=9))
-    db['generated_codes'][code] = days
-    save_db()
-    return code
-
-def get_all_codes():
-    return db.get('generated_codes', {})
-
 async def check_subscription_channels(uid):
     not_joined = []
     for channel in REQUIRED_CHANNELS:
         try:
-            await bot.get_permissions(channel, uid)
+            await bot(GetParticipantRequest(channel, uid))
         except UserNotParticipantError:
             not_joined.append(channel)
         except:
@@ -157,7 +125,7 @@ def get_main_menu(uid):
         [Button.inline("📱 الحسابات", b"accounts")],
         [Button.inline("🔄 تبديل حساب", b"switch_account")],
         [Button.inline("📊 الإحصائيات", b"stats")],
-        [Button.inline("🚀 تشغيل الكل", b"restart_all"), Button.inline("🛑 ايقاف الكل", b"stop_all")]
+        [Button.inline("🚀 تشغيل الكل", b"restart_all")]
     ]
     if uid == ADMIN_ID:
         btns.append([Button.inline("👑 لوحة الادمن", b"admin_panel")])
