@@ -45,21 +45,22 @@ def get_user_data(uid):
         }
     return db['users'][uid]
 
-def is_trial(uid):
+def start_trial(uid):
     user = get_user_data(uid)
     trial_end = user.get('trial_end')
-    if not trial_end or not isinstance(trial_end, str):
-        return False
-    try:
-        return datetime.now() < datetime.fromisoformat(trial_end)
-    except:
-        return False
-
-def get_trial_hours_left(uid):
-    user = get_user_data(uid)
-    trial_end = user.get('trial_end')
-    if not trial_end or not isinstance(trial_end, str):
-        return 0
+    # لو في تاريخ وانتهى او لسه شغال = استخدمها قبل كده
+    if trial_end:
+        try:
+            if datetime.fromisoformat(trial_end) > datetime.now():
+                return False # لسه شغالة
+            else:
+                return False # كانت شغالة وخلصت
+        except:
+            pass
+    # لو مفيش trial_end اصلا = اول مرة
+    user['trial_end'] = (datetime.now() + timedelta(hours=12)).isoformat()
+    save_db()
+    return True
     try:
         end = datetime.fromisoformat(trial_end)
         if datetime.now() >= end:
