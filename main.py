@@ -1339,10 +1339,22 @@ os.makedirs("numbers", exist_ok=True)
 
 print("✅ Bot is running...")
 print("⚡ Dev : @oosss44 - @X5HDO")
-while True:
-    try:
-        bot.polling(none_stop=True, interval=0, timeout=20)
-    except Exception as e:
-        print(f"Error in polling: {str(e)}")
-        time.sleep(5)
-        continue
+if __name__ == '__main__':
+    os.makedirs("do", exist_ok=True)
+    os.makedirs("user", exist_ok=True)
+    os.makedirs("banned", exist_ok=True)
+    os.makedirs("numbers", exist_ok=True)
+    
+    print("✅ Bot is running...")
+    print("⚡ Dev : @oosss44 - @X5HDO")
+    
+    bot.remove_webhook()  # ده أهم سطر
+    time.sleep(1)
+    
+    while True:
+        try:
+            bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"Error in polling: {str(e)}")
+            time.sleep(5)
+            continue
