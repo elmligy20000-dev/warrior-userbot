@@ -1,686 +1,1348 @@
-import requests
-import telebot
-from telebot import types
-import threading
-import time
+import sqlite3
 import json
 import os
-from datetime import datetime, timedelta
-import sqlite3
-from functools import wraps
-import sys
+import time
+import random
+import telebot
+from telebot import types
+import requests
+from datetime import datetime
 import traceback
 
-TOKEN = '8732196949:AAG_TeK8M0anLMYSlOTMQhEx0bnRhGvATM8' 
-MODERATION_API_URL = 'http://apo-fares.abrdns.com/GPT-5.php'
-ADMIN_IDS = [8085768728]
+# برمجة يوسف
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
 
-bot = telebot.TeleBot(TOKEN)
-bot.set_webhook()
+token = "8603287845:AAH_KgPlaPxzVXQlrxyTyZmlisXDU-kANIE"
+bot = telebot.TeleBot(token)
 
-#مبرمج البوت @Devazf
+ADMIN_ID = 8085768728
 
-class Database:
-    def __init__(self):
-        self.init_db()
+def init_db():
+    conn = sqlite3.connect('freenum.db')
+    cursor = conn.cursor()
     
-    def init_db(self):
-        conn = sqlite3.connect('bot.db', check_same_thread=False)
-        c = conn.cursor()
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS group_settings
-                     (group_id INTEGER PRIMARY KEY,
-                      group_title TEXT,
-                      punishment_type TEXT DEFAULT 'ban',
-                      mute_duration INTEGER DEFAULT 0,
-                      warn_limit INTEGER DEFAULT 3,
-                      auto_moderation BOOLEAN DEFAULT 1)''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS banned_users
-                     (user_id INTEGER,
-                      group_id INTEGER,
-                      reason TEXT,
-                      banned_by INTEGER,
-                      ban_date TIMESTAMP,
-                      PRIMARY KEY (user_id, group_id))''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS muted_users
-                     (user_id INTEGER,
-                      group_id INTEGER,
-                      until_date TIMESTAMP,
-                      PRIMARY KEY (user_id, group_id))''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS warnings
-                     (user_id INTEGER,
-                      group_id INTEGER,
-                      warning_count INTEGER DEFAULT 0,
-                      PRIMARY KEY (user_id, group_id))''')
-        
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
+        username TEXT,
+        first_name TEXT,
+        active INTEGER DEFAULT 1,
+        balance REAL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS countries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE,
+        code TEXT,
+        price REAL DEFAULT 0
+    )
+    ''')
+    
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        country_name TEXT,
+        number TEXT,
+        status TEXT DEFAULT 'active',
+        otp_code TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (user_id)
+    )
+    ''')
+    
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS banned_users (
+        user_id INTEGER PRIMARY KEY
+    )
+    ''')
+    
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )
+    ''')
+    
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS numbers (
+        country_name TEXT,
+        number TEXT,
+        used INTEGER DEFAULT 0,
+        PRIMARY KEY (country_name, number)
+    )
+    ''')
+    
+    default_settings = [
+        ('bot_locked', 'false'),
+        ('lock_message', '*⛔️ ⌯ البوت حاليا في حالة صيانة، يرجى الانتضار إلى أن ينتهي الفريق البرمجي من إجراء الصيانة والتحديثات🙂💙.*'),
+        ('bot_channel', 'https://t.me/X5HDO'),
+        ('user_join_channel', ''),
+        ('otp_received_channel', ''),
+        ('incomplete_orders_channel', ''),
+        ('activations_channel', '-1003264480944'),
+        ('publish_activations', 'true')
+    ]
+    
+    for key, value in default_settings:
+        cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', (key, value))
+    
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# برمجة يوسف
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+def get_db_connection():
+    return sqlite3.connect('freenum.db')
+
+def get_user(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if user:
+        return {
+            'user_id': user[0],
+            'username': user[1],
+            'first_name': user[2],
+            'active': bool(user[3]),
+            'balance': user[4],
+            'created_at': user[5]
+        }
+    return None
+
+# برمجة يوسف
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+def create_user(user_id, username, first_name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)', 
+                   (user_id, username, first_name))
+    conn.commit()
+    conn.close()
+
+def update_user_balance(user_id, amount):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET balance = balance + ? WHERE user_id = ?', (amount, user_id))
+    conn.commit()
+    conn.close()
+
+# برمجة يوسف
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+def is_banned(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT 1 FROM banned_users WHERE user_id = ?', (user_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result is not None
+
+def ban_user(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('INSERT OR IGNORE INTO banned_users (user_id) VALUES (?)', (user_id,))
         conn.commit()
+        return True
+    except:
+        return False
+    finally:
         conn.close()
+
+# برمجة يوسف
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+def unban_user(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM banned_users WHERE user_id = ?', (user_id,))
+    conn.commit()
+    deleted = cursor.rowcount > 0
+    conn.close()
+    return deleted
+
+# برمجة يوسف
+
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+def get_setting(key):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result else None
+
+def set_setting(key, value):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, value))
+    conn.commit()
+    conn.close()
+
+# برمجة يوسف
+
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+def get_countries():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM countries ORDER BY name')
+    countries = cursor.fetchall()
+    conn.close()
     
-    def execute_query(self, query, params=(), fetch_one=False, fetch_all=False):
+    return [{
+        'id': c[0],
+        'name': c[1],
+        'code': c[2],
+        'price': c[3]
+    } for c in countries]
+
+def add_country(name, code, price):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('INSERT INTO countries (name, code, price) VALUES (?, ?, ?)', (name, code, price))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
+# برمجة يوسف
+
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+def delete_country(country_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM countries WHERE id = ?', (country_id,))
+    conn.commit()
+    deleted = cursor.rowcount > 0
+    conn.close()
+    return deleted
+
+def get_available_numbers(country_name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT number FROM numbers WHERE country_name = ? AND used = 0', (country_name,))
+    numbers = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return numbers
+
+# برمجة يوسف
+
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+def add_number(country_name, number):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('INSERT OR IGNORE INTO numbers (country_name, number) VALUES (?, ?)', (country_name, number))
+        conn.commit()
+        return True
+    except:
+        return False
+    finally:
+        conn.close()
+
+# برمجة يوسف
+
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+def mark_number_used(country_name, number):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE numbers SET used = 1 WHERE country_name = ? AND number = ?', (country_name, number))
+    conn.commit()
+    conn.close()
+
+def get_random_number(country_name):
+    numbers = get_available_numbers(country_name)
+    if not numbers:
+        return None
+    number = random.choice(numbers)
+    mark_number_used(country_name, number)
+    return number
+
+# برمجة يوسف
+
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+
+#حقوقي شرفك لا تلعب بشرفك
+
+def create_order(user_id, country_name, number):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO orders (user_id, country_name, number, status) 
+        VALUES (?, ?, ?, 'active')
+    ''', (user_id, country_name, number))
+    order_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return order_id
+
+# برمجة يوسف
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+def get_active_order(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM orders 
+        WHERE user_id = ? AND status = 'active' 
+        ORDER BY created_at DESC LIMIT 1
+    ''', (user_id,))
+    order = cursor.fetchone()
+    conn.close()
+    
+    if order:
+        return {
+            'id': order[0],
+            'user_id': order[1],
+            'country_name': order[2],
+            'number': order[3],
+            'status': order[4],
+            'otp_code': order[5],
+            'created_at': order[6]
+        }
+    return None
+
+def update_order_otp(order_id, otp_code):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE orders SET otp_code = ?, status = "completed" WHERE id = ?', (otp_code, order_id))
+    conn.commit()
+    conn.close()
+
+def cancel_order(order_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT country_name, number FROM orders WHERE id = ?', (order_id,))
+    order = cursor.fetchone()
+    
+    if order:
+        country_name, number = order
+        
+        cursor.execute('UPDATE numbers SET used = 0 WHERE country_name = ? AND number = ?', (country_name, number))
+        
+        cursor.execute('UPDATE orders SET status = "cancelled" WHERE id = ?', (order_id,))
+    
+    conn.commit()
+    conn.close()
+
+# برمجة يوسف
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+def change_order_number(order_id, new_number):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT country_name, number FROM orders WHERE id = ?', (order_id,))
+    order = cursor.fetchone()
+    
+    if order:
+        country_name, old_number = order
+        
+        cursor.execute('UPDATE numbers SET used = 0 WHERE country_name = ? AND number = ?', (country_name, old_number))
+        
+        mark_number_used(country_name, new_number)
+        
+        cursor.execute('''
+            UPDATE orders 
+            SET number = ?, otp_code = NULL, created_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+        ''', (new_number, order_id))
+    
+    conn.commit()
+    conn.close()
+
+# برمجة يوسف
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+API_KEY = "G8vC2xZ5bN7mM4qW1eR3"
+
+def fetch_numbers_from_api(country_name):
+    countries = get_countries()
+    country_code = None
+    
+    for country in countries:
+        if country['name'] == country_name:
+            country_code = country['code']
+            break
+    
+    if not country_code:
+        return False
+    
+    try:
+        response = requests.get(f"http://hamadh.store/n/router.php?ye={API_KEY}&country={country_code}")
+        data = response.json()
+        
+        if data.get('success') and data.get('number'):
+            add_number(country_name, data['number'])
+            return True
+    except:
+        pass
+    
+    return False
+
+# برمجة يوسف
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+def get_otp_from_api(number):
+    try:
+        cleaned_number = str(number).replace('+', '').replace(' ', '')
+        response = requests.get(f"http://hamadh.store/y/mo.php?number={cleaned_number}")
+        data = response.json()
+        
+        if 'otp' in data:
+            return data['otp']
+    except:
+        pass
+    
+    return None
+
+# برمجة يوسف
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+def send_notification(channel_type, message, reply_markup=None):
+    channel_id = get_setting(f'{channel_type}_channel')
+    if channel_id and channel_id.strip():
         try:
-            conn = sqlite3.connect('bot.db', check_same_thread=False)
-            c = conn.cursor()
-            c.execute(query, params)
-            
-            if fetch_one:
-                result = c.fetchone()
-            elif fetch_all:
-                result = c.fetchall()
+            if reply_markup:
+                bot.send_message(channel_id, message, parse_mode='Markdown', reply_markup=reply_markup)
             else:
-                result = None
-            
-            conn.commit()
-            conn.close()
-            return result
-        except Exception as e:
-            print(f"❌ خطأ في قاعدة البيانات: {e}")
-            return None if fetch_one or fetch_all else False
+                bot.send_message(channel_id, message, parse_mode='Markdown')
+            return True
+        except:
+            pass
+    return False
 
-db = Database()
-
-#مبرمج البوت @Devazf
-
-def safe_execution(func):
-    @wraps(func)
+def handle_errors(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
         except Exception as e:
-            error_msg = f"⚠️ خطأ في {func.__name__}: {str(e)}\n{traceback.format_exc()}"
-            print(error_msg)
-            
-            for admin_id in ADMIN_IDS:
-                try:
-                    bot.send_message(admin_id, f"⚠️ حدث خطأ:\n<code>{error_msg[:200]}</code>", parse_mode='HTML')
-                except:
-                    pass
-            return None
+            print(f"Error in {func.__name__}: {str(e)}")
+            print(traceback.format_exc())
     return wrapper
 
-def check_content_moderation(text):
-    try:
-        if not text or len(text.strip()) == 0:
-            return False
-        
-        clean_text = text.strip()[:500]
-        
-        response = requests.get(
-            f"{MODERATION_API_URL}?q={clean_text}",
-            timeout=5
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            answer = data.get("answer", "").lower()
-            
-            inappropriate_keywords = ['غير اخلاقي', 'سب', 'قذف', 'نصب', 'احتيال', 'cursing', 'bad', 'inappropriate']
-            if any(keyword in answer for keyword in inappropriate_keywords):
-                return True
-            
-            if "لا" in answer or "غير مسموح" in answer:
-                return True
-                
-        return False
-    except Exception as e:
-        print(f"❌ خطأ في فحص المحتوى: {e}")
-        return False
+# برمجة يوسف
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
 
-#مبرمج البوت @Devazf
-
-@safe_execution
-def punish_user(message, user_id, group_id, reason="محتوى غير أخلاقي"):
-    
-    settings = db.execute_query(
-        "SELECT punishment_type, mute_duration FROM group_settings WHERE group_id = ?",
-        (group_id,), fetch_one=True
-    )
-    
-    if not settings:
-        punishment_type = "ban"
-        mute_duration = 0
-    else:
-        punishment_type, mute_duration = settings
-    
-    try:
-        if punishment_type == "ban":
-            bot.ban_chat_member(group_id, user_id)
-            bot.send_message(group_id, f"🚫 تم حظر المستخدم بسبب: {reason}")
-            
-        elif punishment_type == "kick":
-            bot.ban_chat_member(group_id, user_id)
-            bot.unban_chat_member(group_id, user_id)
-            bot.send_message(group_id, f"👢 تم طرد المستخدم بسبب: {reason}")
-            
-        elif punishment_type == "mute":
-            until_date = None
-            if mute_duration > 0:
-                until_date = datetime.now() + timedelta(seconds=mute_duration)
-                db.execute_query(
-                    "INSERT OR REPLACE INTO muted_users (user_id, group_id, until_date) VALUES (?, ?, ?)",
-                    (user_id, group_id, until_date)
-                )
-            
-            bot.restrict_chat_member(
-                group_id, user_id,
-                until_date=until_date,
-                can_send_messages=False,
-                can_send_media_messages=False,
-                can_send_other_messages=False,
-                can_add_web_page_previews=False
-            )
-            
-            duration_text = f" لمدة {mute_duration} ثانية" if mute_duration > 0 else " للأبد"
-            bot.send_message(group_id, f"🔇 تم كتم المستخدم{duration_text} بسبب: {reason}")
-            
-        elif punishment_type == "warn":
-            warning = db.execute_query(
-                "SELECT warning_count FROM warnings WHERE user_id = ? AND group_id = ?",
-                (user_id, group_id), fetch_one=True
-            )
-            
-            if warning:
-                new_count = warning[0] + 1
-                db.execute_query(
-                    "UPDATE warnings SET warning_count = ? WHERE user_id = ? AND group_id = ?",
-                    (new_count, user_id, group_id)
-                )
-            else:
-                new_count = 1
-                db.execute_query(
-                    "INSERT INTO warnings (user_id, group_id, warning_count) VALUES (?, ?, ?)",
-                    (user_id, group_id, new_count)
-                )
-            
-            warn_limit = settings[2] if len(settings) > 2 else 3
-            
-            if new_count >= warn_limit:
-                punish_user(message, user_id, group_id, f"تجاوز الحد الأقصى للإنذارات ({warn_limit})")
-                db.execute_query(
-                    "DELETE FROM warnings WHERE user_id = ? AND group_id = ?",
-                    (user_id, group_id)
-                )
-            else:
-                bot.send_message(
-                    group_id, 
-                    f"⚠️ إنذار {new_count}/{warn_limit} للمستخدم بسبب: {reason}"
-                )
-    
-    except Exception as e:
-        print(f"❌ خطأ في تطبيق العقوبة: {e}")
-        try:
-            bot.send_message(
-                group_id,
-                f"⚠️ تعذر تطبيق العقوبة. قد لا أملك الصلاحيات الكافية."
-            )
-        except:
-            pass
-
-def admin_only(func):
-    @wraps(func)
-    def wrapper(message, *args, **kwargs):
-        try:
-            if message.chat.type in ['group', 'supergroup']:
-                admin = bot.get_chat_member(message.chat.id, message.from_user.id)
-                if admin.status in ['creator', 'administrator'] or message.from_user.id in ADMIN_IDS:
-                    return func(message, *args, **kwargs)
-                else:
-                    bot.reply_to(message, "⛔ هذا الأمر للمشرفين فقط!")
-            else:
-                bot.reply_to(message, "⚠️ هذا الأمر يعمل فقط في المجموعات!")
-        except Exception as e:
-            print(f"❌ خطأ في التحقق من الصلاحيات: {e}")
-            bot.reply_to(message, "⚠️ حدث خطأ في التحقق من الصلاحيات")
-        return None
-    return wrapper
-
-#مبرمج البوت @Devazf
-
-def get_target_user(message):
-    if message.reply_to_message:
-        return message.reply_to_message.from_user
-    elif len(message.text.split()) > 1:
-        try:
-            user_id = int(message.text.split()[1])
-            class User:
-                def __init__(self, id):
-                    self.id = id
-                    self.first_name = f"User {id}"
-            return User(user_id)
-        except:
-            return None
-    return None
-
-@safe_execution
-@admin_only
-def handle_ban(message):
-    target = get_target_user(message)
-    if not target:
-        bot.reply_to(message, "❌ يرجى الرد على رسالة المستخدم أو إضافة معرفه")
-        return
-    
-    reason = "بدون سبب"
-    if len(message.text.split()) > 2:
-        reason = ' '.join(message.text.split()[2:])
-    elif message.reply_to_message and len(message.text.split()) > 1:
-        reason = ' '.join(message.text.split()[1:])
-    
-    try:
-        bot.ban_chat_member(message.chat.id, target.id)
-        bot.reply_to(message, f"✅ تم حظر {target.first_name}\nالسبب: {reason}")
-        
-        db.execute_query(
-            "INSERT OR REPLACE INTO banned_users (user_id, group_id, reason, banned_by, ban_date) VALUES (?, ?, ?, ?, ?)",
-            (target.id, message.chat.id, reason, message.from_user.id, datetime.now())
-        )
-    except Exception as e:
-        bot.reply_to(message, f"❌ فشل الحظر: {e}")
-
-#مبرمج البوت @Devazf
-
-@safe_execution
-@admin_only
-def handle_unban(message):
-    target = get_target_user(message)
-    if not target:
-        bot.reply_to(message, "❌ يرجى الرد على رسالة المستخدم أو إضافة معرفه")
-        return
-    
-    try:
-        bot.unban_chat_member(message.chat.id, target.id)
-        bot.reply_to(message, f"✅ تم إلغاء حظر {target.first_name}")
-        
-        db.execute_query(
-            "DELETE FROM banned_users WHERE user_id = ? AND group_id = ?",
-            (target.id, message.chat.id)
-        )
-    except Exception as e:
-        bot.reply_to(message, f"❌ فشل إلغاء الحظر: {e}")
-
-@safe_execution
-@admin_only
-def handle_kick(message):
-    target = get_target_user(message)
-    if not target:
-        bot.reply_to(message, "❌ يرجى الرد على رسالة المستخدم أو إضافة معرفه")
-        return
-    
-    reason = "بدون سبب"
-    if len(message.text.split()) > 2:
-        reason = ' '.join(message.text.split()[2:])
-    
-    try:
-        bot.ban_chat_member(message.chat.id, target.id)
-        bot.unban_chat_member(message.chat.id, target.id)
-        bot.reply_to(message, f"✅ تم طرد {target.first_name}\nالسبب: {reason}")
-    except Exception as e:
-        bot.reply_to(message, f"❌ فشل الطرد: {e}")
-
-@safe_execution
-@admin_only
-def handle_mute(message):
-    target = get_target_user(message)
-    if not target:
-        bot.reply_to(message, "❌ يرجى الرد على رسالة المستخدم أو إضافة معرفه")
-        return
-    
-    duration = 0
-    reason = "بدون سبب"
-    
-    parts = message.text.split()
-    if len(parts) > 1:
-        try:
-            for i, part in enumerate(parts):
-                if part.isdigit() and i+1 < len(parts):
-                    if parts[i+1] in ['ثانية', 'ثواني', 's']:
-                        duration = int(part)
-                    elif parts[i+1] in ['دقيقة', 'دقائق', 'm']:
-                        duration = int(part) * 60
-                    elif parts[i+1] in ['ساعة', 'ساعات', 'h']:
-                        duration = int(part) * 3600
-                    elif parts[i+1] in ['يوم', 'أيام', 'd']:
-                        duration = int(part) * 86400
-                    break
-        except:
-            pass
-        
-        if message.reply_to_message:
-            reason = ' '.join(parts[1:]) if len(parts) > 1 else "بدون سبب"
-        else:
-            reason = ' '.join(parts[2:]) if len(parts) > 2 else "بدون سبب"
-    
-    try:
-        until_date = None
-        if duration > 0:
-            until_date = datetime.now() + timedelta(seconds=duration)
-            db.execute_query(
-                "INSERT OR REPLACE INTO muted_users (user_id, group_id, until_date) VALUES (?, ?, ?)",
-                (target.id, message.chat.id, until_date)
-            )
-        
-        bot.restrict_chat_member(
-            message.chat.id, target.id,
-            until_date=until_date,
-            can_send_messages=False,
-            can_send_media_messages=False,
-            can_send_other_messages=False,
-            can_add_web_page_previews=False
-        )
-        
-        duration_text = f" لمدة {duration} ثانية" if duration > 0 else " للأبد"
-        bot.reply_to(message, f"✅ تم كتم {target.first_name}{duration_text}\nالسبب: {reason}")
-        
-    except Exception as e:
-        bot.reply_to(message, f"❌ فشل الكتم: {e}")
-
-@safe_execution
-@admin_only
-def handle_unmute(message):
-    target = get_target_user(message)
-    if not target:
-        bot.reply_to(message, "❌ يرجى الرد على رسالة المستخدم أو إضافة معرفه")
-        return
-    
-    try:
-        bot.restrict_chat_member(
-            message.chat.id, target.id,
-            can_send_messages=True,
-            can_send_media_messages=True,
-            can_send_other_messages=True,
-            can_add_web_page_previews=True
-        )
-        
-        db.execute_query(
-            "DELETE FROM muted_users WHERE user_id = ? AND group_id = ?",
-            (target.id, message.chat.id)
-        )
-        
-        bot.reply_to(message, f"✅ تم إلغاء كتم {target.first_name}")
-    except Exception as e:
-        bot.reply_to(message, f"❌ فشل إلغاء الكتم: {e}")
-
-#مبرمج البوت @Devazf
-
-@safe_execution
-@admin_only
-def handle_settings(message):
-    args = message.text.split()
-    if len(args) == 1:
-        settings = db.execute_query(
-            "SELECT punishment_type, mute_duration, warn_limit, auto_moderation FROM group_settings WHERE group_id = ?",
-            (message.chat.id,), fetch_one=True
-        )
-        
-        if settings:
-            punishment, mute_duration, warn_limit, auto_mod = settings
-            auto_text = "مفعل" if auto_mod else "معطل"
-            mute_text = f"{mute_duration} ثانية" if mute_duration > 0 else "غير محدد"
-            
-            text = f"⚙️ إعدادات المجموعة:\n"
-            text += f"• العقوبة التلقائية: {punishment}\n"
-            text += f"• مدة الكتم: {mute_text}\n"
-            text += f"• حد الإنذارات: {warn_limit}\n"
-            text += f"• المراقبة التلقائية: {auto_text}"
-        else:
-            text = "⚙️ لم يتم تعيين إعدادات خاصة. الإعدادات الافتراضية:\n"
-            text += "• العقوبة: ban\n• المراقبة التلقائية: مفعل"
-        
-        bot.reply_to(message, text)
-        
-    elif len(args) >= 3:
-        setting = args[1].lower()
-        value = args[2].lower()
-        
-        if setting == "punishment":
-            if value in ["ban", "kick", "mute", "warn"]:
-                db.execute_query(
-                    "INSERT OR REPLACE INTO group_settings (group_id, punishment_type) VALUES (?, ?)",
-                    (message.chat.id, value)
-                )
-                bot.reply_to(message, f"✅ تم تعيين العقوبة التلقائية إلى: {value}")
-            else:
-                bot.reply_to(message, "❌ قيمة غير صحيحة. اختر: ban, kick, mute, warn")
-        
-        elif setting == "mutetime" and len(args) >= 4:
-            try:
-                duration = int(args[3])
-                db.execute_query(
-                    "UPDATE group_settings SET mute_duration = ? WHERE group_id = ?",
-                    (duration, message.chat.id)
-                )
-                bot.reply_to(message, f"✅ تم تعيين مدة الكتم إلى: {duration} ثانية")
-            except:
-                bot.reply_to(message, "❌ يرجى إدخال رقم صحيح للمدة")
-        
-        elif setting == "warnlimit":
-            try:
-                limit = int(value)
-                db.execute_query(
-                    "UPDATE group_settings SET warn_limit = ? WHERE group_id = ?",
-                    (limit, message.chat.id)
-                )
-                bot.reply_to(message, f"✅ تم تعيين حد الإنذارات إلى: {limit}")
-            except:
-                bot.reply_to(message, "❌ يرجى إدخال رقم صحيح")
-        
-        elif setting == "automod":
-            if value in ["on", "off", "1", "0", "true", "false"]:
-                auto_val = 1 if value in ["on", "1", "true"] else 0
-                db.execute_query(
-                    "UPDATE group_settings SET auto_moderation = ? WHERE group_id = ?",
-                    (auto_val, message.chat.id)
-                )
-                bot.reply_to(message, f"✅ تم {'تفعيل' if auto_val else 'تعطيل'} المراقبة التلقائية")
-            else:
-                bot.reply_to(message, "❌ قيمة غير صحيحة. استخدم on/off")
-
-@safe_execution
-@admin_only
-def handle_warns(message):
-    target = get_target_user(message)
-    if not target:
-        bot.reply_to(message, "❌ يرجى الرد على رسالة المستخدم")
-        return
-    
-    warning = db.execute_query(
-        "SELECT warning_count FROM warnings WHERE user_id = ? AND group_id = ?",
-        (target.id, message.chat.id), fetch_one=True
-    )
-    
-    count = warning[0] if warning else 0
-    bot.reply_to(message, f"⚠️ إنذارات {target.first_name}: {count}")
-
-@safe_execution
-@admin_only
-def handle_reset_warns(message):
-    target = get_target_user(message)
-    if not target:
-        bot.reply_to(message, "❌ يرجى الرد على رسالة المستخدم")
-        return
-    
-    db.execute_query(
-        "DELETE FROM warnings WHERE user_id = ? AND group_id = ?",
-        (target.id, message.chat.id)
-    )
-    bot.reply_to(message, f"✅ تم إعادة تعيين إنذارات {target.first_name}")
-
-#مبرمج البوت @Devazf
-
-@safe_execution
-@admin_only
-def handle_help(message):
-    help_text = """
-🤖 **أوامر البوت المتاحة:**
-
-**أوامر الإدارة (للمشرفين فقط):**
-• `حظر` - حظر المستخدم (بالرد أو المعرف)
-• `الغاء حظر` - إلغاء حظر المستخدم
-• `طرد` - طرد المستخدم من المجموعة
-• `كتم [مدة]` - كتم المستخدم (مثال: كتم 10 دقيقة)
-• `الغاء كتم` - إلغاء كتم المستخدم
-• `انذارات` - عرض إنذارات المستخدم
-• `مسح انذارات` - مسح إنذارات المستخدم
-
-**إعدادات المجموعة:**
-• `اعدادات` - عرض الإعدادات الحالية
-• `اعدادات punishment ban/kick/mute/warn` - تعيين العقوبة
-• `اعدادات mutetime [ثواني]` - تعيين مدة الكتم
-• `اعدادات warnlimit [رقم]` - تعيين حد الإنذارات
-• `اعدادات automod on/off` - تفعيل/تعطيل المراقبة
-
-**ملاحظات:**
-• يمكن تنفيذ الأوامر بالرد على رسالة المستخدم
-• يمكن إضافة سبب بعد الأمر (مثال: حظر 123456789 سبب مخالف)
-• البوت يحتاج صلاحيات المشرف في المجموعة
-    """
-    bot.reply_to(message, help_text, parse_mode='Markdown')
-
-@safe_execution
-def handle_group_message(message):
-    if message.from_user.id == bot.get_me().id:
-        return
-    
-    chat_id = message.chat.id
+@bot.message_handler(commands=['start'])
+@handle_errors
+def start_command(message):
     user_id = message.from_user.id
     
-    muted = db.execute_query(
-        "SELECT until_date FROM muted_users WHERE user_id = ? AND group_id = ?",
-        (user_id, chat_id), fetch_one=True
+    if get_setting('bot_locked') == 'true' and user_id != ADMIN_ID:
+        bot.send_message(message.chat.id, get_setting('lock_message'), parse_mode='Markdown')
+        return
+    
+    if is_banned(user_id) and user_id != ADMIN_ID:
+        bot.send_message(message.chat.id, "*❌ ⌯ تم حظرك من استخدام البوت.*", parse_mode='Markdown')
+        return
+    
+    create_user(user_id, message.from_user.username, message.from_user.first_name)
+    
+    username_display = f"**@{message.from_user.username}**" if message.from_user.username else "*⌯ لا يوجد*"
+    
+    if user_id == ADMIN_ID:
+        welcome_text = f"""*♻️ ⌯ اهلا بك عزيزي الادمن في لوحه التحكم اختر زر من الأزرار التاليه*
+
+*🆔 ⌯ ايدي حسابك:* `{user_id}`
+
+*⬇️ ⌯ تحكم عبر الأزرار التالية ⬇️*"""
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.row(
+            types.InlineKeyboardButton("اضافه دوله", callback_data="addcountry"),
+            types.InlineKeyboardButton("حذف دوله", callback_data="delcountry")
+        )
+        markup.row(types.InlineKeyboardButton("رموز الدول", callback_data="country_codes"))
+        markup.row(
+            types.InlineKeyboardButton("حظر مستخدم", callback_data="banuser"),
+            types.InlineKeyboardButton("فك حظر مستخدم", callback_data="unbanuser")
+        )
+        markup.row(types.InlineKeyboardButton("ادارة قنوات الاشعارات", callback_data="notification_channels"))
+        markup.row(types.InlineKeyboardButton("☎️ ⌯ شراء ارقام", callback_data="buy_number"))
+        markup.row(
+            types.InlineKeyboardButton("📮 ⌯ الدعم المباشر", url="https://t.me/oosss44"),
+            types.InlineKeyboardButton("🚦 ⌯ قناة البوت", url="https://t.me/X5HDO")
+        )
+    else:
+        welcome_text = f"""*🤖 ⌯ اهلا بك عزيزي المستخدم في بوت الارقام المجانية 👋*
+
+*🆔 ⌯ ايدي حسابك:* `{user_id}`
+
+*⬇️ ⌯ تحكم عبر الأزرار التالية ⬇️*"""
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.row(types.InlineKeyboardButton("☎️ ⌯ شراء ارقام", callback_data="buy_number"))
+        markup.row(
+            types.InlineKeyboardButton("📮 ⌯ الدعم المباشر", url="https://t.me/oosss44"),
+            types.InlineKeyboardButton("🚦 ⌯ قناة البوت", url="https://t.me/X5HDO")
+        )
+    
+    bot.send_message(
+        message.chat.id,
+        welcome_text,
+        parse_mode='Markdown',
+        disable_web_page_preview=True,
+        reply_markup=markup
     )
     
-    if muted:
-        until_date = muted[0]
-        if until_date:
-            try:
-                until = datetime.fromisoformat(until_date.replace(' ', 'T'))
-                if datetime.now() > until:
-                    try:
-                        bot.restrict_chat_member(
-                            chat_id, user_id,
-                            can_send_messages=True,
-                            can_send_media_messages=True,
-                            can_send_other_messages=True,
-                            can_add_web_page_previews=True
-                        )
-                        db.execute_query(
-                            "DELETE FROM muted_users WHERE user_id = ? AND group_id = ?",
-                            (user_id, chat_id)
-                        )
-                    except:
-                        pass
+    user_info = get_user(user_id)
+    if user_info and user_id != ADMIN_ID:
+        notification_text = f"""*👤 ⌯ دخول مستخدم جديد*
+
+*👤 ⌯ الاسم:* {message.from_user.first_name}
+*📛 ⌯ اليوزر:* {username_display}
+*🆔 ⌯ الايدي:* `{user_id}`
+*⏰ ⌯ الوقت:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+        
+        send_notification('user_join', notification_text)
+
+# برمجة يوسف
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+@bot.callback_query_handler(func=lambda call: True)
+@handle_errors
+def callback_handler(call):
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
+    
+    if is_banned(user_id) and user_id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "❌ تم حظرك من استخدام البوت", show_alert=True)
+        return
+    
+    if call.data == "back_to_menu":
+        if user_id == ADMIN_ID:
+            text = f"""*♻️ ⌯ اهلا بك عزيزي الادمن في لوحه التحكم اختر زر من الأزرار التاليه*
+
+*🆔 ⌯ ايدي حسابك:* `{user_id}`
+
+*⬇️ ⌯ تحكم عبر الأزرار التالية ⬇️*"""
+            
+            markup = types.InlineKeyboardMarkup()
+            markup.row(
+                types.InlineKeyboardButton("اضافه دوله", callback_data="addcountry"),
+                types.InlineKeyboardButton("حذف دوله", callback_data="delcountry")
+            )
+            markup.row(types.InlineKeyboardButton("رموز الدول", callback_data="country_codes"))
+            markup.row(
+                types.InlineKeyboardButton("حظر مستخدم", callback_data="banuser"),
+                types.InlineKeyboardButton("فك حظر مستخدم", callback_data="unbanuser")
+            )
+            markup.row(types.InlineKeyboardButton("ادارة قنوات الاشعارات", callback_data="notification_channels"))
+            markup.row(types.InlineKeyboardButton("☎️ ⌯ شراء ارقام", callback_data="buy_number"))
+            markup.row(
+                types.InlineKeyboardButton("📮 ⌯ الدعم المباشر", url="https://t.me/oosss44"),
+                types.InlineKeyboardButton("🚦 ⌯ قناة البوت", url="https://t.me/X5HDO")
+            )
+        else:
+            text = f"""*🤖 ⌯ اهلا بك عزيزي المستخدم في بوت الارقام المجانية 👋*
+
+*🆔 ⌯ ايدي حسابك:* `{user_id}`
+
+*⬇️ ⌯ تحكم عبر الأزرار التالية ⬇️*"""
+            
+            markup = types.InlineKeyboardMarkup()
+            markup.row(types.InlineKeyboardButton("☎️ ⌯ شراء ارقام", callback_data="buy_number"))
+            markup.row(
+                types.InlineKeyboardButton("📮 ⌯ الدعم المباشر", url="https://t.me/oosss44"),
+                types.InlineKeyboardButton("🚦 ⌯ قناة البوت", url="https://t.me/X5HDO")
+            )
+        
+        bot.edit_message_text(
+            text,
+            chat_id,
+            message_id,
+            parse_mode='Markdown',
+            disable_web_page_preview=True,
+            reply_markup=markup
+        )
+    
+    elif call.data == "country_codes" and user_id == ADMIN_ID:
+        countries = get_countries()
+        
+        if not countries:
+            bot.edit_message_text(
+                "*❌ ⌯ لا توجد دول مضافة حالياً.*",
+                chat_id,
+                message_id,
+                parse_mode='Markdown',
+                reply_markup=types.InlineKeyboardMarkup().add(
+                    types.InlineKeyboardButton("🔙 ⌯ رجوع", callback_data="adminback")
+                )
+            )
+            return
+        
+        text = "*⌯ كل دولة لها رمز مثال*\n\n"
+        for country in countries:
+            text += f"*⌯ {country['name']} [ {country['code']} ]*\n"
+        
+        text += "\n*⌯ يمكنك استخدام هذه الرموز في إضافة الأرقام من الـ API*"
+        
+        bot.edit_message_text(
+            text,
+            chat_id,
+            message_id,
+            parse_mode='Markdown',
+            reply_markup=types.InlineKeyboardMarkup().add(
+                types.InlineKeyboardButton("🔙 ⌯ رجوع", callback_data="adminback")
+            )
+        )
+    
+    elif call.data == "buy_number":
+        countries = get_countries()
+        
+        if not countries:
+            bot.edit_message_text(
+                "*❌ ⌯ لا توجد دول متاحة حالياً.*\n*⌯ يرجى المحاولة لاحقاً.*",
+                chat_id,
+                message_id,
+                parse_mode='Markdown',
+                reply_markup=types.InlineKeyboardMarkup().add(
+                    types.InlineKeyboardButton("🔙 ⌯ رجوع", callback_data="back_to_menu")
+                )
+            )
+            return
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.row(
+            types.InlineKeyboardButton("السعر 💰", callback_data="price_header"),
+            types.InlineKeyboardButton("الدولة ☑️", callback_data="country_header")
+        )
+        
+        for country in countries:
+            available_numbers = len(get_available_numbers(country['name']))
+            price_text = f"{country['price']} نقطة💸" if country['price'] > 0 else "0 نقطة💸"
+            
+            markup.row(
+                types.InlineKeyboardButton(price_text, callback_data=f"buy_{country['name']}"),
+                types.InlineKeyboardButton(country['name'], callback_data=f"buy_{country['name']}")
+            )
+        
+        markup.row(types.InlineKeyboardButton("🔙 رجوع", callback_data="back_to_menu"))
+        
+        bot.edit_message_text(
+            "*🌍 ⌯ اختر الدولة:*\n\n*⌯ يرجى الضغط على الدولة المراد سحب رقم لها♻️*",
+            chat_id,
+            message_id,
+            parse_mode='Markdown',
+            reply_markup=markup
+        )
+    
+    elif call.data.startswith("buy_") and call.data != "buy_number":
+        country_name = call.data.replace("buy_", "")
+        
+        countries = get_countries()
+        country_price = 0
+        for country in countries:
+            if country['name'] == country_name:
+                country_price = country['price']
+                break
+        
+        number = get_random_number(country_name)
+        
+        if not number:
+            if fetch_numbers_from_api(country_name):
+                number = get_random_number(country_name)
+            
+            if not number:
+                bot.edit_message_text(
+                    "*❌ ⌯ لا توجد أرقام متاحة لهذه الدولة حالياً.*",
+                    chat_id,
+                    message_id,
+                    parse_mode='Markdown',
+                    reply_markup=types.InlineKeyboardMarkup().add(
+                        types.InlineKeyboardButton("🔙 ⌯ رجوع", callback_data="buy_number")
+                    )
+                )
+                return
+        
+        order_id = create_order(user_id, country_name, number)
+        
+        current_time = datetime.now()
+        time_text = f"{current_time.day}|{['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'][current_time.weekday()]}|{current_time.strftime('%I:%M')} {'صباحاً' if current_time.hour < 12 else 'مساءً'}"
+        
+        text = f"""*☑️ ⌯ تم شراء الرقم بنجاح ✅*
+
+*🌐 ⌯ الدولة:* {country_name}
+*☎️ ⌯ الرقم:* `{number}`
+*💰 ⌯ السعر:* {country_price} نقطة
+*💭 ⌯ الكود:* لم يصل بعد...
+*📅 ⌯ الوقت:* {time_text}
+
+*🌀 ⌯ التعليمات:*
+*🔰 ⌯ قم بإدخال الرقم في تطبيق واتساب ، ثم قم بطلب الكود عبر زر طلب الكود اسفل.*"""
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.row(types.InlineKeyboardButton("☑️ ⌯ طلب الكود", callback_data="request_otp"))
+        markup.row(
+            types.InlineKeyboardButton("🔄 ⌯ تغيير الرقم", callback_data="change_number"),
+            types.InlineKeyboardButton("❎ ⌯ إلغاء الرقم", callback_data="cancel_order")
+        )
+        
+        bot.edit_message_text(
+            text,
+            chat_id,
+            message_id,
+            parse_mode='Markdown',
+            reply_markup=markup
+        )
+        
+        user_info = get_user(user_id)
+        username_display = f"**@{user_info['username']}**" if user_info and user_info['username'] else "*⌯ لا يوجد*"
+        
+        notification_text = f"""*🛒 ⌯ طلب جديد غير مكتمل*
+
+*👤 ⌯ المستخدم:* {call.from_user.first_name}
+*📛 ⌯ اليوزر:* {username_display}
+*🆔 ⌯ الايدي:* `{user_id}`
+*🌍 ⌯ الدولة:* {country_name}
+*📞 ⌯ الرقم:* {number}
+*💰 ⌯ السعر:* {country_price} نقطة
+*⏰ ⌯ الوقت:* {current_time.strftime('%Y-%m-%d %H:%M:%S')}"""
+        
+        send_notification('incomplete_orders', notification_text)
+    
+    elif call.data == "request_otp":
+        order = get_active_order(user_id)
+        
+        if not order:
+            bot.answer_callback_query(call.id, "*❌ ⌯ لا يوجد طلب نشط.*", show_alert=True)
+            return
+        
+        if order['otp_code']:
+            countries = get_countries()
+            country_price = 0
+            for country in countries:
+                if country['name'] == order['country_name']:
+                    country_price = country['price']
+                    break
+            
+            current_time = datetime.now()
+            time_text = f"{current_time.day}|{['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'][current_time.weekday()]}|{current_time.strftime('%I:%M')} {'صباحاً' if current_time.hour < 12 else 'مساءً'}"
+            
+            text = f"""*☑️ ⌯ تم شراء الرقم بنجاح ✅*
+
+*🌐 ⌯ الدولة:* {order['country_name']}
+*☎️ ⌯ الرقم:* `{order['number']}`
+*💰 ⌯ السعر:* {country_price} نقطة
+*💭 ⌯ الكود:* `{order['otp_code']}`
+*📅 ⌯ الوقت:* {time_text}
+
+*🌀 ⌯ التعليمات:*
+*🔰 ⌯ قم بإدخال الرقم في تطبيق واتساب ، ثم قم بطلب الكود عبر زر طلب الكود اسفل.*"""
+            
+            markup = types.InlineKeyboardMarkup()
+            markup.row(types.InlineKeyboardButton("🛒 ⌯ شراء رقم جديد", callback_data="buy_number"))
+            
+            bot.edit_message_text(
+                text,
+                chat_id,
+                message_id,
+                parse_mode='Markdown',
+                reply_markup=markup
+            )
+            return
+        
+        bot.edit_message_text(
+            "*⏳ ⌯ جاري جلب الكود... الرجاء الانتظار*",
+            chat_id,
+            message_id,
+            parse_mode='Markdown'
+        )
+        
+        otp = get_otp_from_api(order['number'])
+        
+        countries = get_countries()
+        country_price = 0
+        for country in countries:
+            if country['name'] == order['country_name']:
+                country_price = country['price']
+                break
+        
+        current_time = datetime.now()
+        time_text = f"{current_time.day}|{['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'][current_time.weekday()]}|{current_time.strftime('%I:%M')} {'صباحاً' if current_time.hour < 12 else 'مساءً'}"
+        
+        if otp:
+            update_order_otp(order['id'], otp)
+            
+            text = f"""*☑️ ⌯ تم شراء الرقم بنجاح ✅*
+
+*🌐 ⌯ الدولة:* {order['country_name']}
+*☎️ ⌯ الرقم:* `{order['number']}`
+*💰 ⌯ السعر:* {country_price} نقطة
+*💭 ⌯ الكود:* `{otp}`
+*📅 ⌯ الوقت:* {time_text}
+
+*🌀 ⌯ التعليمات:*
+*🔰 ⌯ قم بإدخال الرقم في تطبيق واتساب ، ثم قم بطلب الكود عبر زر طلب الكود اسفل.*"""
+            
+            markup = types.InlineKeyboardMarkup()
+            markup.row(types.InlineKeyboardButton("🛒 ⌯ شراء رقم جديد", callback_data="buy_number"))
+            
+            bot.edit_message_text(
+                text,
+                chat_id,
+                message_id,
+                parse_mode='Markdown',
+                reply_markup=markup
+            )
+            
+            user_info = get_user(user_id)
+            username_display = f"**@{user_info['username']}**" if user_info and user_info['username'] else "*⌯ لا يوجد*"
+            
+            notification_text = f"""*💬 ⌯ تم وصول كود جديد*
+
+*👤 ⌯ المستخدم:* {call.from_user.first_name}
+*📛 ⌯ اليوزر:* {username_display}
+*🆔 ⌯ الايدي:* `{user_id}`
+*📞 ⌯ الرقم:* {order['number']}
+*🔑 ⌯ الكود:* {otp}
+*🌍 ⌯ الدولة:* {order['country_name']} 
+*💙 ⌯ السعر:* {country_price} نقطة
+*⏰ ⌯ الوقت:* {current_time.strftime('%Y-%m-%d %H:%M:%S')}"""
+            
+            send_notification('otp_received', notification_text)
+            
+            if get_setting('publish_activations') == 'true':
+                masked_number = order['number'][:-4] + "••••" if len(order['number']) >= 4 else order['number']
+                masked_user_id = str(user_id)[:-3] + "•••" if len(str(user_id)) >= 3 else str(user_id)
+                
+                activation_text = f"""*🛰︙تم تنفيذ طلب خدمة رقمية عبر [ خدمات مجانية| Free bots 📲 ] بنجاح.*
+
+*🎰︙النظام:* WA
+*🌐︙المنطقة:* {order['country_name']} 
+
+*📎︙المعرّف:* {masked_number}
+*🆔︙المستخدم:* {masked_user_id}
+*💵︙القيمة:* $ 0
+*🔐︙رمز المعالجة:* [ {otp} ]
+
+*📆︙تاريخ العملية:* {current_time.strftime('%Y-%m-%d %H:%M:%S')}"""
+                
+                markup = types.InlineKeyboardMarkup()
+                markup.row(types.InlineKeyboardButton(f"رمز المعالجة: {otp}", callback_data="empty_callback"))
+                markup.row(types.InlineKeyboardButton("▰{ ✅️ بوت الطلبات }▰", url="https://t.me/N4S5bot"))
+                
+                send_notification('activations', activation_text, markup)
+        else:
+            text = f"""*☑️ ⌯ تم شراء الرقم بنجاح ✅*
+
+*🌐 ⌯ الدولة:* {order['country_name']}
+*☎️ ⌯ الرقم:* `{order['number']}`
+*💰 ⌯ السعر:* {country_price} نقطة
+*💭 ⌯ الكود:* لم يصل بعد...
+*📅 ⌯ الوقت:* {time_text}
+
+*🌀 ⌯ التعليمات:*
+*🔰 ⌯ قم بإدخال الرقم في تطبيق واتساب ، ثم قم بطلب الكود عبر زر طلب الكود اسفل.*"""
+            
+            markup = types.InlineKeyboardMarkup()
+            markup.row(types.InlineKeyboardButton("☑️ ⌯ طلب الكود", callback_data="request_otp"))
+            markup.row(
+                types.InlineKeyboardButton("🔄 ⌯ تغيير الرقم", callback_data="change_number"),
+                types.InlineKeyboardButton("❎ ⌯ إلغاء الرقم", callback_data="cancel_order")
+            )
+            
+            bot.edit_message_text(
+                text,
+                chat_id,
+                message_id,
+                parse_mode='Markdown',
+                reply_markup=markup
+            )
+    
+    elif call.data == "change_number":
+        order = get_active_order(user_id)
+        
+        if not order:
+            bot.answer_callback_query(call.id, "*ليس لديك طلب نشط*", show_alert=True)
+            return
+        
+        order_time = datetime.strptime(order['created_at'], '%Y-%m-%d %H:%M:%S')
+        current_time = datetime.now()
+        time_diff = (current_time - order_time).total_seconds()
+        
+        if time_diff < 3:
+            bot.answer_callback_query(call.id, "*يمكنك تغيير رقم بعد 3 ثواني ⚠️*", show_alert=True)
+            return
+        
+        new_number = get_random_number(order['country_name'])
+        
+        if not new_number:
+            if fetch_numbers_from_api(order['country_name']):
+                new_number = get_random_number(order['country_name'])
+            
+            if not new_number:
+                bot.edit_message_text(
+                    "*❌ ⌯ لا توجد أرقام متاحة لهذه الدولة حالياً.*",
+                    chat_id,
+                    message_id,
+                    parse_mode='Markdown',
+                    reply_markup=types.InlineKeyboardMarkup().add(
+                        types.InlineKeyboardButton("🔙 ⌯ رجوع", callback_data="buy_number")
+                    )
+                )
+                return
+        
+        change_order_number(order['id'], new_number)
+        
+        countries = get_countries()
+        country_price = 0
+        for country in countries:
+            if country['name'] == order['country_name']:
+                country_price = country['price']
+                break
+        
+        current_time = datetime.now()
+        time_text = f"{current_time.day}|{['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'][current_time.weekday()]}|{current_time.strftime('%I:%M')} {'صباحاً' if current_time.hour < 12 else 'مساءً'}"
+        
+        text = f"""*☑️ ⌯ تم شراء الرقم بنجاح ✅*
+
+*🌐 ⌯ الدولة:* {order['country_name']}
+*☎️ ⌯ الرقم:* `{new_number}`
+*💰 ⌯ السعر:* {country_price} نقطة
+*💭 ⌯ الكود:* لم يصل بعد...
+*📅 ⌯ الوقت:* {time_text}
+
+*🌀 ⌯ التعليمات:*
+*🔰 ⌯ قم بإدخال الرقم في تطبيق واتساب ، ثم قم بطلب الكود عبر زر طلب الكود اسفل.*"""
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.row(types.InlineKeyboardButton("☑️ ⌯ طلب الكود", callback_data="request_otp"))
+        markup.row(
+            types.InlineKeyboardButton("🔄 ⌯ تغيير الرقم", callback_data="change_number"),
+            types.InlineKeyboardButton("❎ ⌯ إلغاء الرقم", callback_data="cancel_order")
+        )
+        
+        bot.edit_message_text(
+            text,
+            chat_id,
+            message_id,
+            parse_mode='Markdown',
+            reply_markup=markup
+        )
+    
+    elif call.data == "cancel_order":
+        order = get_active_order(user_id)
+        
+        if not order:
+            bot.answer_callback_query(call.id, "*لا يوجد طلب نشط لإلغائه.*", show_alert=True)
+            return
+        
+        cancel_order(order['id'])
+        
+        text = "*✅ ⌯ تم إلغاء الرقم بنجاح*\n\n*⬇️ ⌯ هل تريد الشراء مجددا؟*"
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.row(types.InlineKeyboardButton("☑️ ⌯ شراء مرة اخرى؟", callback_data="buy_number"))
+        
+        bot.edit_message_text(
+            text,
+            chat_id,
+            message_id,
+            parse_mode='Markdown',
+            reply_markup=markup
+        )
+    
+    elif call.data == "notification_channels" and user_id == ADMIN_ID:
+        user_join_channel = get_setting('user_join_channel') or '*❌ غير معين*'
+        otp_received_channel = get_setting('otp_received_channel') or '*❌ غير معين*'
+        incomplete_orders_channel = get_setting('incomplete_orders_channel') or '*❌ غير معين*'
+        activations_channel = get_setting('activations_channel') or '*❌ غير معين*'
+        publish_activations = "✅ ⌯ مفعل" if get_setting('publish_activations') == 'true' else "❌ ⌯ معطل"
+        
+        text = f"""*📢 ⌯ إدارة قنوات الإشعارات*
+
+*👤 ⌯ قناة دخول المستخدمين:* `{user_join_channel}`
+*🔑 ⌯ قناة وصول الكود:* `{otp_received_channel}`
+*🛒 ⌯ قناة الأرقام غير المكتملة:* `{incomplete_orders_channel}`
+*🎥 ⌯ قناة التفعيلات:* `{activations_channel}`
+*📢 ⌯ نشر التفعيلات:* {publish_activations}"""
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.row(types.InlineKeyboardButton("👤 ⌯ تعيين قناة دخول المستخدمين", callback_data="set_user_join_channel"))
+        markup.row(types.InlineKeyboardButton("🔑 ⌯ تعيين قناة وصول الكود", callback_data="set_otp_received_channel"))
+        markup.row(types.InlineKeyboardButton("🛒 ⌯ تعيين قناة الأرقام غير المكتملة", callback_data="set_incomplete_orders_channel"))
+        markup.row(types.InlineKeyboardButton("🎥 ⌯ تعيين قناة التفعيلات", callback_data="set_activations_channel"))
+        markup.row(types.InlineKeyboardButton(f"{publish_activations} نشر التفعيلات", callback_data="toggle_publish_activations"))
+        markup.row(types.InlineKeyboardButton("🔙 ⌯ رجوع", callback_data="adminback"))
+        
+        bot.edit_message_text(
+            text,
+            chat_id,
+            message_id,
+            parse_mode='Markdown',
+            reply_markup=markup
+        )
+    
+    elif call.data in ["set_user_join_channel", "set_otp_received_channel", "set_incomplete_orders_channel", "set_activations_channel"] and user_id == ADMIN_ID:
+        channel_type_map = {
+            "set_user_join_channel": "دخول المستخدمين",
+            "set_otp_received_channel": "وصول الكود",
+            "set_incomplete_orders_channel": "الأرقام غير المكتملة",
+            "set_activations_channel": "التفعيلات"
+        }
+        
+        channel_type_name = channel_type_map[call.data]
+        
+        with open(f'do_{chat_id}.txt', 'w') as f:
+            f.write(call.data)
+        
+        text = f"""*⌯ تعيين قناة {channel_type_name}*
+
+*⌯ يرجى إرسال آيدي القناة:*
+
+*⌯ مثال:* `-1001234567890`
+
+*⌯ أرسل /cancel للإلغاء*"""
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.row(types.InlineKeyboardButton("الغاء", callback_data="notification_channels"))
+        
+        bot.edit_message_text(
+            text,
+            chat_id,
+            message_id,
+            parse_mode='Markdown',
+            reply_markup=markup
+        )
+    
+    elif call.data == "toggle_publish_activations" and user_id == ADMIN_ID:
+        current = get_setting('publish_activations')
+        new_value = 'false' if current == 'true' else 'true'
+        set_setting('publish_activations', new_value)
+        
+        status = "✅ ⌯ تم تفعيل نشر التفعيلات" if new_value == 'true' else "❌ ⌯ تم تعطيل نشر التفعيلات"
+        
+        bot.edit_message_text(
+            status,
+            chat_id,
+            message_id,
+            parse_mode='Markdown',
+            reply_markup=types.InlineKeyboardMarkup().add(
+                types.InlineKeyboardButton("🔙 ⌯ رجوع", callback_data="notification_channels")
+            )
+        )
+    
+    elif call.data in ["banuser", "unbanuser"] and user_id == ADMIN_ID:
+        action = "حظر" if call.data == "banuser" else "فك حظر"
+        
+        with open(f'do_{chat_id}.txt', 'w') as f:
+            f.write(call.data)
+        
+        text = f"""*🚫 ⌯ {action} مستخدم*
+
+*⌯ يرجى إرسال آيدي المستخدم الذي تريد {action}:*
+
+*⌯ أرسل /cancel للإلغاء*"""
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.row(types.InlineKeyboardButton("الغاء", callback_data="adminback"))
+        
+        bot.edit_message_text(
+            text,
+            chat_id,
+            message_id,
+            parse_mode='Markdown',
+            reply_markup=markup
+        )
+    
+    elif call.data == "delcountry" and user_id == ADMIN_ID:
+        countries = get_countries()
+        
+        if not countries:
+            bot.edit_message_text(
+                "*❌ ⌯ لا توجد دول مضافة حالياً.*",
+                chat_id,
+                message_id,
+                parse_mode='Markdown',
+                reply_markup=types.InlineKeyboardMarkup().add(
+                    types.InlineKeyboardButton("🔙 ⌯ رجوع", callback_data="adminback")
+                )
+            )
+            return
+        
+        markup = types.InlineKeyboardMarkup()
+        for country in countries:
+            markup.row(types.InlineKeyboardButton(
+                f"{country['name']} - {country['price']} نقطة",
+                callback_data=f"delete_country_{country['id']}"
+            ))
+        markup.row(types.InlineKeyboardButton("🔙 ⌯ رجوع", callback_data="adminback"))
+        
+        bot.edit_message_text(
+            "*🗑️ ⌯ اختر الدولة التي تريد حذفها:*",
+            chat_id,
+            message_id,
+            parse_mode='Markdown',
+            reply_markup=markup
+        )
+    
+    elif call.data.startswith("delete_country_") and user_id == ADMIN_ID:
+        country_id = int(call.data.replace("delete_country_", ""))
+        
+        countries = get_countries()
+        country_name = None
+        for country in countries:
+            if country['id'] == country_id:
+                country_name = country['name']
+                break
+        
+        if country_name and delete_country(country_id):
+            text = f"*✅ ⌯ تم حذف الدولة ({country_name}) بنجاح*"
+        else:
+            text = "*❌ ⌯ لم يتم العثور على الدولة*"
+        
+        bot.edit_message_text(
+            text,
+            chat_id,
+            message_id,
+            parse_mode='Markdown',
+            reply_markup=types.InlineKeyboardMarkup().add(
+                types.InlineKeyboardButton("🔙 ⌯ رجوع", callback_data="adminback")
+            )
+        )
+    
+    elif call.data == "addcountry" and user_id == ADMIN_ID:
+        with open(f'do_{chat_id}.txt', 'w') as f:
+            f.write("addcountry")
+        
+        text = """*⌯ ارسل اسم الدولة ورمزها وسعرها (كل سطر)*
+*⌯ مثال:*
+*مصر*
+*eg*
+*0*"""
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.row(types.InlineKeyboardButton("الغاء", callback_data="adminback"))
+        
+        bot.edit_message_text(
+            text,
+            chat_id,
+            message_id,
+            parse_mode='Markdown',
+            reply_markup=markup
+        )
+    
+    elif call.data == "adminback" and user_id == ADMIN_ID:
+        text = f"""*♻️ ⌯ اهلا بك عزيزي الادمن في لوحه التحكم اختر زر من الأزرار التاليه*
+
+*🆔 ⌯ ايدي حسابك:* `{user_id}`
+
+
+*⬇️ ⌯ تحكم عبر الأزرار التالية ⬇️*"""
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.row(
+            types.InlineKeyboardButton("اضافه دوله", callback_data="addcountry"),
+            types.InlineKeyboardButton("حذف دوله", callback_data="delcountry")
+        )
+        markup.row(types.InlineKeyboardButton("رموز الدول", callback_data="country_codes"))
+        markup.row(
+            types.InlineKeyboardButton("حظر مستخدم", callback_data="banuser"),
+            types.InlineKeyboardButton("فك حظر مستخدم", callback_data="unbanuser")
+        )
+        markup.row(types.InlineKeyboardButton("ادارة قنوات الاشعارات", callback_data="notification_channels"))
+        markup.row(types.InlineKeyboardButton("☎️ ⌯ شراء ارقام", callback_data="buy_number"))
+        markup.row(
+            types.InlineKeyboardButton("📮 ⌯ الدعم المباشر", url="https://t.me/oosss44"),
+            types.InlineKeyboardButton("🚦 ⌯ قناة البوت", url="https://t.me/X5HDO")
+        )
+        
+        bot.edit_message_text(
+            text,
+            chat_id,
+            message_id,
+            parse_mode='Markdown',
+            disable_web_page_preview=True,
+            reply_markup=markup
+        )
+    
+    elif call.data == "empty_callback":
+        bot.answer_callback_query(call.id)
+    
+    bot.answer_callback_query(call.id, "✅ تمت العملية", show_alert=False)
+
+# برمجة يوسف
+# يوزري @oosss44
+# قناة الملفات @X5HDO
+#حقوقي شرفك لا تلعب بشرفك
+
+@bot.message_handler(func=lambda message: True)
+@handle_errors
+def handle_messages(message):
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+    
+    if user_id == ADMIN_ID and os.path.exists(f'do_{chat_id}.txt'):
+        with open(f'do_{chat_id}.txt', 'r') as f:
+            action = f.read().strip()
+        
+        os.remove(f'do_{chat_id}.txt')
+        
+        if action == "addcountry":
+            lines = message.text.strip().split('\n')
+            if len(lines) >= 3:
+                name = lines[0].strip()
+                code = lines[1].strip()
+                try:
+                    price = float(lines[2].strip())
+                except:
+                    price = 0
+                
+                if add_country(name, code, price):
+                    response = f"*✅ ⌯ تم اضافة الدولة ({name}) بنجاح*"
                 else:
-                    try:
-                        bot.delete_message(chat_id, message.message_id)
-                    except:
-                        pass
+                    response = f"*❌ ⌯ فشل في اضافة الدولة ({name})*"
+                
+                markup = types.InlineKeyboardMarkup()
+                markup.row(types.InlineKeyboardButton("رجوع", callback_data="adminback"))
+                
+                bot.send_message(
+                    chat_id,
+                    response,
+                    parse_mode='Markdown',
+                    reply_markup=markup
+                )
+                return
+        
+        elif action in ["set_user_join_channel", "set_otp_received_channel", 
+                       "set_incomplete_orders_channel", "set_activations_channel"]:
+            setting_key = action.replace("set_", "") + "_channel"
+            set_setting(setting_key, message.text.strip())
+            
+            channel_type_map = {
+                "set_user_join_channel": "دخول المستخدمين",
+                "set_otp_received_channel": "وصول الكود",
+                "set_incomplete_orders_channel": "الأرقام غير المكتملة",
+                "set_activations_channel": "التفعيلات"
+            }
+            
+            response = f"*✅ ⌯ تم تعيين قناة {channel_type_map[action]}:* `{message.text.strip()}`"
+            
+            markup = types.InlineKeyboardMarkup()
+            markup.row(types.InlineKeyboardButton("رجوع", callback_data="notification_channels"))
+            
+            bot.send_message(
+                chat_id,
+                response,
+                parse_mode='Markdown',
+                reply_markup=markup
+            )
+            return
+        
+        elif action in ["banuser", "unbanuser"]:
+            try:
+                target_id = int(message.text.strip())
+                if target_id > 0:
+                    if action == "banuser":
+                        if ban_user(target_id):
+                            response = f"*✅ ⌯ تم حظر المستخدم {target_id} بنجاح*"
+                        else:
+                            response = f"*❌ ⌯ المستخدم {target_id} محظور مسبقاً*"
+                    else:  # unbanuser
+                        if unban_user(target_id):
+                            response = f"*✅ ⌯ تم فك حظر المستخدم {target_id} بنجاح*"
+                        else:
+                            response = f"*❌ ⌯ المستخدم {target_id} غير محظور*"
+                    
+                    markup = types.InlineKeyboardMarkup()
+                    markup.row(types.InlineKeyboardButton("رجوع", callback_data="adminback"))
+                    
+                    bot.send_message(
+                        chat_id,
+                        response,
+                        parse_mode='Markdown',
+                        reply_markup=markup
+                    )
                     return
             except:
                 pass
     
-    banned = db.execute_query(
-        "SELECT * FROM banned_users WHERE user_id = ? AND group_id = ?",
-        (user_id, chat_id), fetch_one=True
-    )
-    
-    if banned:
-        try:
-            bot.delete_message(chat_id, message.message_id)
-        except:
-            pass
-        return
-    
-    settings = db.execute_query(
-        "SELECT auto_moderation FROM group_settings WHERE group_id = ?",
-        (chat_id,), fetch_one=True
-    )
-    
-    auto_mod = settings[0] if settings else 1
-    
-    if auto_mod and message.text:
-        is_inappropriate = check_content_moderation(message.text)
+    if message.text and message.text.startswith('/cancel'):
+        if os.path.exists(f'do_{chat_id}.txt'):
+            os.remove(f'do_{chat_id}.txt')
         
-        if is_inappropriate:
-            try:
-                bot.delete_message(chat_id, message.message_id)
-                
-                punish_user(message, user_id, chat_id, "محتوى غير أخلاقي")
-                
-            except Exception as e:
-                print(f"❌ خطأ في معالجة الرسالة غير الأخلاقية: {e}")
-
-@safe_execution
-def handle_private_message(message):
-    if message.text == '/start':
         bot.send_message(
-            message.chat.id,
-            "👋 مرحباً! أنا بوت حماية المجموعات.\n"
-            "أقوم بمراقبة المحتوى غير الأخلاقي وتطبيق العقوبات.\n\n"
-            "لإضافتي إلى مجموعتك، احتاج صلاحيات المشرف.\n"
-            "للحصول على المساعدة، أرسل 'مساعدة'"
-        )
-    elif message.text == 'مساعدة' or message.text == 'help':
-        bot.send_message(
-            message.chat.id,
-            "🤖 **أوامر البوت:**\n\n"
-            "في المجموعات (للمشرفين):\n"
-            "• حظر - حظر مستخدم\n"
-            "• الغاء حظر - إلغاء حظر\n"
-            "• طرد - طرد مستخدم\n"
-            "• كتم - كتم مستخدم\n"
-            "• الغاء كتم - إلغاء كتم\n"
-            "• اعدادات - إعدادات المجموعة\n\n"
-            "يمكن تنفيذ الأوامر بالرد على رسالة المستخدم.",
+            chat_id,
+            "*تم الإلغاء*",
             parse_mode='Markdown'
         )
-    else:
-        bot.send_message(
-            message.chat.id,
-            "مرحباً! أنا بوت حماية المجموعات.\n"
-            "أرسل 'مساعدة' لعرض الأوامر المتاحة."
-        )
-
-#مبرمج البوت @Devazf
-
-def register_handlers():
-    bot.register_message_handler(handle_ban, func=lambda m: m.text and m.text.startswith('حظر') and m.chat.type in ['group', 'supergroup'])
-    bot.register_message_handler(handle_unban, func=lambda m: m.text and m.text.startswith('الغاء حظر') and m.chat.type in ['group', 'supergroup'])
-    bot.register_message_handler(handle_kick, func=lambda m: m.text and m.text.startswith('طرد') and m.chat.type in ['group', 'supergroup'])
-    bot.register_message_handler(handle_mute, func=lambda m: m.text and m.text.startswith('كتم') and m.chat.type in ['group', 'supergroup'])
-    bot.register_message_handler(handle_unmute, func=lambda m: m.text and m.text.startswith('الغاء كتم') and m.chat.type in ['group', 'supergroup'])
-    bot.register_message_handler(handle_warns, func=lambda m: m.text and m.text.startswith('انذارات') and m.chat.type in ['group', 'supergroup'])
-    bot.register_message_handler(handle_reset_warns, func=lambda m: m.text and m.text.startswith('مسح انذارات') and m.chat.type in ['group', 'supergroup'])
-    bot.register_message_handler(handle_settings, func=lambda m: m.text and m.text.startswith('اعدادات') and m.chat.type in ['group', 'supergroup'])
-    bot.register_message_handler(handle_help, func=lambda m: m.text and m.text == 'مساعدة' and m.chat.type in ['group', 'supergroup'])
+        return
     
-    bot.register_message_handler(handle_group_message, func=lambda m: m.chat.type in ['group', 'supergroup'], content_types=['text'])
-    
-    bot.register_message_handler(handle_private_message, func=lambda m: m.chat.type == 'private')
+    bot.send_message(
+        chat_id,
+        "*🚫 ⌯ أمر غير معروف، استخدم /start للبدء*",
+        parse_mode='Markdown'
+    )
 
-#مبرمج البوت @Devazf
+os.makedirs("do", exist_ok=True)
+os.makedirs("user", exist_ok=True)
+os.makedirs("banned", exist_ok=True)
+os.makedirs("numbers", exist_ok=True)
 
-def start_bot():
-    print("✅ البوت يعمل بنجاح!")
-    
-    register_handlers()
-    
-    while True:
-        try:
-            bot.infinity_polling(timeout=60, long_polling_timeout=30)
-        except requests.exceptions.ReadTimeout:
-            print("⚠️ انتهت مهلة الاتصال، إعادة المحاولة...")
-            time.sleep(5)
-            continue
-        except requests.exceptions.ConnectionError:
-            print("⚠️ مشكلة في الاتصال بالإنترنت، إعادة المحاولة بعد 10 ثوان...")
-            time.sleep(10)
-            continue
-        except Exception as e:
-            print(f"❌ خطأ غير متوقع: {e}")
-            print("🔄 إعادة تشغيل البوت بعد 5 ثوان...")
-            time.sleep(5)
-            continue
-
-if __name__ == "__main__":
-    start_bot()
+print("✅ Bot is running...")
+print("⚡ Dev : @oosss44 - @X5HDO")
+while True:
+    try:
+        bot.polling(none_stop=True, interval=0, timeout=20)
+    except Exception as e:
+        print(f"Error in polling: {str(e)}")
+        time.sleep(5)
+        continue
