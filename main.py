@@ -1,6 +1,6 @@
 import telebot
 from telebot import types
-import json, os, time, urllib.parse
+import json, os, time
 from datetime import datetime
 
 # ========== الإعدادات - غير دول ==========
@@ -15,8 +15,8 @@ MAIN_GROUP_ID = -1003969652936 # ايدي الجروب العام من @RawDataB
 bot = telebot.TeleBot(TOKEN)
 DATA_FILE = "invites_data.json"
 
-PUBLIC_GROUP_LINK = f"https://t.me/{PUBLIC_GROUP_USERNAME}"
-ADD_MEMBERS_DIRECT = f"https://t.me/share/url?url={urllib.parse.quote(PUBLIC_GROUP_LINK)}"
+# ده الرابط اللي بيفتح الجروب + يطلع زرار "Add Member" فوق
+ADD_MEMBERS_DIRECT = f"tg://resolve?domain={PUBLIC_GROUP_USERNAME}&start=addmembers"
 
 RANKS = {0: "مبتدئ 🐣", 10: "نشيط ⚡", 25: "محترف 🔥", 50: "أسطورة 👑", 100: "امبراطور 💎"}
 
@@ -39,7 +39,7 @@ def save_data(data_to_save):
 data = load_data()
 
 def send_welcome(inviter_id, inviter_name, new_user_id):
-    global data # ده السطر اللي كان ناقص
+    global data
     print(f"[LOG] محاولة ترحيب: {inviter_name} ضاف {new_user_id}")
 
     if inviter_id == new_user_id: return
@@ -79,10 +79,9 @@ def send_welcome(inviter_id, inviter_name, new_user_id):
 
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton("🔥 اضغط هنا للدخول للجروب السري", url=SECRET_GROUP_LINK))
-        markup.add(types.InlineKeyboardButton(f"⚡ ضيف {REQUIRED_INVITES} عضو الآن", url=ADD_MEMBERS_DIRECT))
+        markup.add(types.InlineKeyboardButton(f"👥 إضافة {REQUIRED_INVITES} عضو الآن", url=ADD_MEMBERS_DIRECT))
 
         bot.send_message(MAIN_GROUP_ID, text, reply_markup=markup)
-        print("[LOG] تم ارسال رسالة الـ50")
 
         try:
             bot.send_message(inviter_id, f"🎊 مبروك يا {inviter_name}\nوصلت {count} دعوة\n\nادخل الجروب السري من هنا:\n{SECRET_GROUP_LINK}")
@@ -92,15 +91,13 @@ def send_welcome(inviter_id, inviter_name, new_user_id):
         text = f"✅ «الطالب™» {inviter_name} «اضاف «{count}»\n🔥\n\n⏳ فاضلك {remaining} دعوة وتدخل الجروب السري\n\n📚 لو عيز تتسجل انتا كمان ضيفه {REQUIRED_INVITES} هـنـا"
 
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton(f"⚡ اضغط هنا وضيف {REQUIRED_INVITES} عضو", url=ADD_MEMBERS_DIRECT))
+        markup.add(types.InlineKeyboardButton(f"👥 إضافة أعضاء", url=ADD_MEMBERS_DIRECT))
 
         bot.send_message(MAIN_GROUP_ID, text, reply_markup=markup)
-        print("[LOG] تم ارسال رسالة الترحيب العادية")
 
 @bot.chat_member_handler()
 def track_invites_chat_member(message: types.ChatMemberUpdated):
-    global data # ده السطر اللي كان ناقص
-    print(f"[LOG] Chat Member Event: {message.chat.id}")
+    global data
     if message.chat.id!= MAIN_GROUP_ID: return
     old, new = message.old_chat_member, message.new_chat_member
 
@@ -118,12 +115,10 @@ def track_invites_chat_member(message: types.ChatMemberUpdated):
                 if info["count"] < REQUIRED_INVITES:
                     info["got_link"] = False
                 save_data(data)
-                print(f"[LOG] تم خصم دعوة من {inviter_id}")
                 break
 
 @bot.message_handler(content_types=['new_chat_members'])
 def track_invites_new_member(message):
-    print(f"[LOG] New Member Message: {message.chat.id}")
     if message.chat.id!= MAIN_GROUP_ID: return
     inviter_id = str(message.from_user.id)
     inviter_name = message.from_user.first_name
@@ -144,7 +139,7 @@ def start(msg):
         types.InlineKeyboardButton(f"📊 دعواتي: {count}", callback_data="my_stats"),
         types.InlineKeyboardButton("🏆 التوب 10", callback_data="top10")
     )
-    markup.add(types.InlineKeyboardButton(f"📥 ضيف {REQUIRED_INVITES} واتسجل فوراً", url=ADD_MEMBERS_DIRECT))
+    markup.add(types.InlineKeyboardButton(f"👥 إضافة أعضاء", url=ADD_MEMBERS_DIRECT))
     markup.add(types.InlineKeyboardButton("📞 تواصل مع الدعم", url=f"tg://user?id={OWNER_ID}"))
 
     if msg.from_user.id == OWNER_ID:
@@ -161,7 +156,7 @@ def start(msg):
 
 @bot.callback_query_handler(func=lambda c: True)
 def handle_buttons(call):
-    global data # ده السطر اللي كان ناقص
+    global data
     user_id = str(call.from_user.id)
 
     if call.data == "my_stats":
@@ -178,7 +173,7 @@ def handle_buttons(call):
                f"⏳ المتبقي: {max(0, REQUIRED_INVITES - count)}"
 
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton(f"⚡ ضيف {REQUIRED_INVITES} عضو الآن", url=ADD_MEMBERS_DIRECT))
+        markup.add(types.InlineKeyboardButton(f"👥 إضافة أعضاء", url=ADD_MEMBERS_DIRECT))
 
         bot.answer_callback_query(call.id)
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
