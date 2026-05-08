@@ -15,7 +15,6 @@ MAIN_GROUP_ID = -1003969652936 # ايدي الجروب العام من @RawDataB
 bot = telebot.TeleBot(TOKEN)
 DATA_FILE = "invites_data.json"
 
-# رابط الإضافة المباشر
 PUBLIC_GROUP_LINK = f"https://t.me/{PUBLIC_GROUP_USERNAME}"
 ADD_MEMBERS_DIRECT = f"https://t.me/share/url?url={urllib.parse.quote(PUBLIC_GROUP_LINK)}"
 
@@ -33,28 +32,22 @@ def load_data():
     with open(DATA_FILE, 'r', encoding='utf-8') as f:
         return json.load(f)
 
-def save_data(data):
+def save_data(data_to_save):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+        json.dump(data_to_save, f, ensure_ascii=False, indent=4)
 
 data = load_data()
 
-# ========== دالة الترحيب الموحدة ==========
 def send_welcome(inviter_id, inviter_name, new_user_id):
+    global data # ده السطر اللي كان ناقص
     print(f"[LOG] محاولة ترحيب: {inviter_name} ضاف {new_user_id}")
 
-    if inviter_id == new_user_id:
-        print("[LOG] الشخص ضاف نفسه - تم التجاهل")
-        return
-    if inviter_id in data["banned"]:
-        print("[LOG] الشخص محظور")
-        return
+    if inviter_id == new_user_id: return
+    if inviter_id in data["banned"]: return
 
     try:
         new_user = bot.get_chat_member(MAIN_GROUP_ID, new_user_id).user
-        if new_user.is_bot:
-            print("[LOG] بوت دخل - تم التجاهل")
-            return
+        if new_user.is_bot: return
     except Exception as e:
         print(f"[ERROR] مقدرش اجيب بيانات العضو: {e}")
         return
@@ -68,7 +61,6 @@ def send_welcome(inviter_id, inviter_name, new_user_id):
         }
 
     if new_user_id in data["users"][inviter_id]["invited"]:
-        print("[LOG] العضو متحسب قبل كده")
         return
 
     data["users"][inviter_id]["invited"].append(new_user_id)
@@ -105,9 +97,9 @@ def send_welcome(inviter_id, inviter_name, new_user_id):
         bot.send_message(MAIN_GROUP_ID, text, reply_markup=markup)
         print("[LOG] تم ارسال رسالة الترحيب العادية")
 
-# ========== 1. لو العضو دخل بلينك دعوة ==========
 @bot.chat_member_handler()
 def track_invites_chat_member(message: types.ChatMemberUpdated):
+    global data # ده السطر اللي كان ناقص
     print(f"[LOG] Chat Member Event: {message.chat.id}")
     if message.chat.id!= MAIN_GROUP_ID: return
     old, new = message.old_chat_member, message.new_chat_member
@@ -129,7 +121,6 @@ def track_invites_chat_member(message: types.ChatMemberUpdated):
                 print(f"[LOG] تم خصم دعوة من {inviter_id}")
                 break
 
-# ========== 2. لو حد ضاف عضو يدوي - ده اللي هيشتغل معاك ==========
 @bot.message_handler(content_types=['new_chat_members'])
 def track_invites_new_member(message):
     print(f"[LOG] New Member Message: {message.chat.id}")
@@ -141,7 +132,6 @@ def track_invites_new_member(message):
         if new_user.id == bot.get_me().id: continue
         send_welcome(inviter_id, inviter_name, str(new_user.id))
 
-# ========== أوامر البوت ==========
 @bot.message_handler(commands=['start'])
 def start(msg):
     user_id = str(msg.from_user.id)
@@ -169,9 +159,9 @@ def start(msg):
 
     bot.send_message(msg.chat.id, text, reply_markup=markup)
 
-# ========== الأزرار ==========
 @bot.callback_query_handler(func=lambda c: True)
 def handle_buttons(call):
+    global data # ده السطر اللي كان ناقص
     user_id = str(call.from_user.id)
 
     if call.data == "my_stats":
@@ -233,7 +223,6 @@ def handle_buttons(call):
         bot.edit_message_text("متأكد عايز تصفر كل الدعوات؟", call.message.chat.id, call.message.message_id, reply_markup=markup)
 
     elif call.data == "reset_yes":
-        global data
         data = {"users": {}, "banned": [], "stats": {"total_joins": 0}}
         save_data(data)
         bot.answer_callback_query(call.id, "تم التصفير", show_alert=True)
@@ -243,9 +232,9 @@ def handle_buttons(call):
         bot.delete_message(call.message.chat.id, call.message.message_id)
         start(call.message)
 
-# ========== أوامر الأدمن ==========
 @bot.message_handler(commands=['add'])
 def add_invites(msg):
+    global data
     if msg.from_user.id!= OWNER_ID: return
     try:
         _, user_id, amount = msg.text.split()
@@ -259,6 +248,7 @@ def add_invites(msg):
 
 @bot.message_handler(commands=['ban'])
 def ban_user(msg):
+    global data
     if msg.from_user.id!= OWNER_ID: return
     try:
         user_id = msg.text.split()[1]
