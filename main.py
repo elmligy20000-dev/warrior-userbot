@@ -1,7 +1,7 @@
 import telebot
 from telebot import types
-import json, os, time
-from datetime import datetime
+import json, os, time, threading
+from datetime import datetime, timedelta
 
 # ========== الإعدادات - غير دول ==========
 TOKEN = os.environ.get('TOKEN') # حطه في Variables في Railway
@@ -15,22 +15,30 @@ MAIN_GROUP_ID = -1003969652936 # ايدي الجروب العام من @RawDataB
 bot = telebot.TeleBot(TOKEN)
 DATA_FILE = "invites_data.json"
 
-# ده الرابط اللي بيشتغل - يفتح الجروب وفيه زرار إضافة أعضاء فوق
 ADD_MEMBERS_DIRECT = f"https://t.me/{PUBLIC_GROUP_USERNAME}"
 
-RANKS = {0: "مبتدئ 🐣", 10: "نشيط ⚡", 25: "محترف 🔥", 50: "أسطورة 👑", 100: "امبراطور 💎"}
+RANKS = {0: "طالب سيئ 🐣", 10: "طالب نشيط ⚡", 25: "محترف 🔥", 50: "أسطورة 👑", 100: "طالب مجتهد 💎", 200: "طالب ممتاز 🏛️"}
 
 def get_rank(count):
-    rank = "مبتدئ 🐣"
+    rank = "طالب سيئ 🐣"
     for req, r in RANKS.items():
         if count >= req: rank = r
     return rank
 
 def load_data():
+    default = {
+        "users": {}, "banned": [], "support": {},
+        "stats": {"total_joins": 0, "total_messages": 0},
+        "broadcast": {"waiting": False},
+        "antispam": {}
+    }
     if not os.path.exists(DATA_FILE):
-        return {"users": {}, "banned": [], "stats": {"total_joins": 0}}
+        return default
     with open(DATA_FILE, 'r', encoding='utf-8') as f:
-        return json.load(f)
+        loaded = json.load(f)
+        for k, v in default.items():
+            if k not in loaded: loaded[k] = v
+        return loaded
 
 def save_data(data_to_save):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
@@ -38,26 +46,39 @@ def save_data(data_to_save):
 
 data = load_data()
 
+# ========== حماية من السبام ==========
+def check_spam(user_id):
+    now = time.time()
+    user_id = str(user_id)
+    if user_id not in data["antispam"]:
+        data["antispam"][user_id] = []
+
+    # امسح الرسايل القديمة اكتر من 10 ثواني
+    data["antispam"][user_id] = [t for t in data["antispam"][user_id] if now - t < 10]
+    data["antispam"][user_id].append(now)
+
+    # لو بعت اكتر من 5 رسايل في 10 ثواني
+    if len(data["antispam"][user_id]) > 5:
+        return False
+    return True
+
 def send_welcome(inviter_id, inviter_name, new_user_id):
     global data
-    print(f"[LOG] محاولة ترحيب: {inviter_name} ضاف {new_user_id}")
-
-    if inviter_id == new_user_id: return
-    if inviter_id in data["banned"]: return
+    if inviter_id == new_user_id or inviter_id in data["banned"]: return
 
     try:
         new_user = bot.get_chat_member(MAIN_GROUP_ID, new_user_id).user
         if new_user.is_bot: return
-    except Exception as e:
-        print(f"[ERROR] مقدرش اجيب بيانات العضو: {e}")
-        return
+    except: return
 
     data["stats"]["total_joins"] += 1
 
     if inviter_id not in data["users"]:
         data["users"][inviter_id] = {
             "count": 0, "name": inviter_name,
-            "got_link": False, "invited": [], "join_date": str(datetime.now())
+            "got_link": False, "invited": [],
+            "join_date": str(datetime.now()),
+            "last_active": str(datetime.now())
         }
 
     if new_user_id in data["users"][inviter_id]["invited"]:
@@ -65,33 +86,33 @@ def send_welcome(inviter_id, inviter_name, new_user_id):
 
     data["users"][inviter_id]["invited"].append(new_user_id)
     data["users"][inviter_id]["count"] = len(data["users"][inviter_id]["invited"])
+    data["users"][inviter_id]["last_active"] = str(datetime.now())
     save_data(data)
 
     count = data["users"][inviter_id]["count"]
     remaining = max(0, REQUIRED_INVITES - count)
-    print(f"[LOG] تم الحساب: {inviter_name} = {count} دعوة")
 
     if count >= REQUIRED_INVITES and not data["users"][inviter_id]["got_link"]:
         data["users"][inviter_id]["got_link"] = True
         save_data(data)
 
-        text = f"✅ «الطالب™» {inviter_name} «اضاف «{count}»\n🔥√\n\n√ وتم تسجيلة في الجروب السري 👨‍💻\n\n👇 انضم هنـا ليتم قبولك فالجروب السري ➡️\n\n{SECRET_GROUP_LINK}\n\n📚 لو عيز تتسجل انتا كمان ضيفه {REQUIRED_INVITES} هـنـا\n\n√ ليتم قبولك في الجروب السري ➡️"
+        text = f"✅ ( الطالب ) {inviter_name} «اضاف «{count}»\n🔥√\n\n√ وتم تسجيلة في الجروب السري 👨‍💻\n\n👇 انضم هنـا ليتم قبولك فالجروب السري ➡️\n\n{SECRET_GROUP_LINK}\n\n📚 لو عيز تتسجل انتا كمان ضيف {REQUIRED_INVITES} هـنـا\n\n√ ليتم قبولك في الجروب السري ➡️"
 
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton("🔥 اضغط هنا للدخول للجروب السري", url=SECRET_GROUP_LINK))
-        markup.add(types.InlineKeyboardButton(f"👥 إضافة أعضاء", url=ADD_MEMBERS_DIRECT))
+        markup.add(types.InlineKeyboardButton(f"👥 ضيف عشان تدخل السري", url=ADD_MEMBERS_DIRECT))
 
         bot.send_message(MAIN_GROUP_ID, text, reply_markup=markup)
 
         try:
-            bot.send_message(inviter_id, f"🎊 مبروك يا {inviter_name}\nوصلت {count} دعوة\n\nادخل الجروب السري من هنا:\n{SECRET_GROUP_LINK}")
+            bot.send_message(inviter_id, f"🎊 مبروك يا {inviter_name}\nوصلت {count} دعوة {get_rank(count)}\n\nادخل الجروب السري من هنا:\n{SECRET_GROUP_LINK}")
         except: pass
 
     else:
-        text = f"✅ «الطالب™» {inviter_name} «اضاف «{count}»\n🔥\n\n⏳ فاضلك {remaining} دعوة وتدخل الجروب السري\n\n📚 لو عيز تتسجل انتا كمان ضيفه {REQUIRED_INVITES} هـنـا"
+        text = f"✅ ( الطالب ) {inviter_name} «اضاف «{count}»\n🔥\n\n⏳ فاضلك {remaining} دعوة وتدخل الجروب السري\n\n📚 لو عيز تتسجل انتا كمان ضيفه {REQUIRED_INVITES} هـنـا"
 
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton(f"👥 إضافة أعضاء", url=ADD_MEMBERS_DIRECT))
+        markup.add(types.InlineKeyboardButton(f"👥 ضيف عشان تدخل السري", url=ADD_MEMBERS_DIRECT))
 
         bot.send_message(MAIN_GROUP_ID, text, reply_markup=markup)
 
@@ -140,14 +161,17 @@ def start(msg):
         types.InlineKeyboardButton("🏆 التوب 10", callback_data="top10")
     )
     markup.add(types.InlineKeyboardButton(f"👥 إضافة أعضاء", url=ADD_MEMBERS_DIRECT))
-    markup.add(types.InlineKeyboardButton("📞 تواصل مع الدعم", url=f"tg://user?id={OWNER_ID}"))
+    markup.add(types.InlineKeyboardButton("📞 تواصل مع المدير", callback_data="contact_support"))
 
     if msg.from_user.id == OWNER_ID:
-        markup.add(types.InlineKeyboardButton("👑 لوحة التحكم", callback_data="admin_panel"))
+        markup.add(
+            types.InlineKeyboardButton("👑 لوحة التحكم", callback_data="admin_panel"),
+            types.InlineKeyboardButton("📢 إذاعة", callback_data="broadcast_menu")
+        )
 
     text = f"مرحباً {msg.from_user.first_name} 👋\n\n" \
            f"🎯 المطلوب: {REQUIRED_INVITES} دعوة\n" \
-           f"📈 دعواتك: {count}\n" \
+           f"📈 ضفت: {count}\n" \
            f"🏅 رانك: {rank}\n" \
            f"⏳ المتبقي: {max(0, REQUIRED_INVITES - count)}\n\n" \
            f"دوس على الزرار وضيف أصحابك واستلم الجروب السري تلقائي ⚡"
@@ -167,13 +191,15 @@ def handle_buttons(call):
 
         text = f"📊 إحصائياتك\n\n" \
                f"👤 الاسم: {call.from_user.first_name}\n" \
-               f"📥 الدعوات: {count}\n" \
+               f"📥 ضفت: {count}\n" \
                f"🏅 الرانك: {get_rank(count)}\n" \
                f"🥇 ترتيبك: {position}\n" \
-               f"⏳ المتبقي: {max(0, REQUIRED_INVITES - count)}"
+               f"⏳ المتبقي: {max(0, REQUIRED_INVITES - count)}\n" \
+               f"📅 تاريخ الانضمام: {user_data.get('join_date', 'غير معروف')[:10]}"
 
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(f"👥 إضافة أعضاء", url=ADD_MEMBERS_DIRECT))
+        markup.add(types.InlineKeyboardButton("⬅️ رجوع", callback_data="back_start"))
 
         bot.answer_callback_query(call.id)
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
@@ -186,8 +212,16 @@ def handle_buttons(call):
         else:
             for i, (uid, info) in enumerate(sorted_users, 1):
                 text += f"{i}. {info['name']} - {info['count']} دعوة {get_rank(info['count'])}\n"
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("⬅️ رجوع", callback_data="back_start"))
         bot.answer_callback_query(call.id)
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=call.message.reply_markup)
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+
+    elif call.data == "contact_support":
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, "📝 اكتب رسالتك للدعم الفني هنا\nسيتم الرد عليك في أقرب وقت 👨‍💻")
+        data["support"][user_id] = "waiting"
+        save_data(data)
 
     elif call.data == "admin_panel":
         if call.from_user.id!= OWNER_ID:
@@ -196,17 +230,77 @@ def handle_buttons(call):
         total_users = len(data["users"])
         total_invites = sum(u["count"] for u in data["users"].values())
         active = sum(1 for u in data["users"].values() if u["count"] >= REQUIRED_INVITES)
+        banned = len(data["banned"])
 
-        text = f"👑 لوحة التحكم\n\n" \
+        text = f"👑 لوحة التحكم المتطورة\n\n" \
                f"👥 إجمالي الأعضاء: {total_users}\n" \
-               f"📨 إجمالي الدعوات: {total_invites}\n" \
+               f"📨 إجمالي اضافتك: {total_invites}\n" \
                f"✅ وصلوا للهدف: {active}\n" \
-               f"📊 دخل الجروب: {data['stats']['total_joins']}\n\n" \
+               f"🚫 المحظورين: {banned}\n" \
+               f"📊 دخل الجروب: {data['stats']['total_joins']}\n" \
+               f"💬 إجمالي الرسائل: {data['stats']['total_messages']}\n\n" \
                f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
         markup = types.InlineKeyboardMarkup(row_width=2)
-        markup.add(types.InlineKeyboardButton("🔄 تصفير الكل", callback_data="reset_confirm"))
+        markup.add(
+            types.InlineKeyboardButton("📢 إذاعة", callback_data="broadcast_menu"),
+            types.InlineKeyboardButton("📊 إحصائيات", callback_data="detailed_stats")
+        )
+        markup.add(
+            types.InlineKeyboardButton("🚫 قائمة المحظورين", callback_data="banned_list"),
+            types.InlineKeyboardButton("🔄 تصفير الكل", callback_data="reset_confirm")
+        )
         markup.add(types.InlineKeyboardButton("⬅️ رجوع", callback_data="back_start"))
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+
+    elif call.data == "broadcast_menu":
+        if call.from_user.id!= OWNER_ID:
+            return bot.answer_callback_query(call.id, "❌ للمشرف فقط", show_alert=True)
+
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("📝 بدء الإذاعة", callback_data="start_broadcast"))
+        markup.add(types.InlineKeyboardButton("⬅️ رجوع", callback_data="admin_panel"))
+        bot.edit_message_text("📢 نظام الإذاعة\n\nدوس بدء الإذاعة واكتب الرسالة اللي عايز تبعتها لكل الأعضاء",
+                            call.message.chat.id, call.message.message_id, reply_markup=markup)
+
+    elif call.data == "start_broadcast":
+        if call.from_user.id!= OWNER_ID: return
+        data["broadcast"]["waiting"] = True
+        save_data(data)
+        bot.send_message(call.message.chat.id, "📝 اكتب رسالة الإذاعة الآن\nيمكنك إرسال نص، صورة، فيديو، ملف\n\nلإلغاء اكتب /cancel")
+
+    elif call.data == "detailed_stats":
+        total = len(data["users"])
+        if total == 0:
+            avg = 0
+        else:
+            avg = sum(u["count"] for u in data["users"].values()) / total
+
+        active_today = sum(1 for u in data["users"].values()
+                          if "last_active" in u and
+                          datetime.fromisoformat(u["last_active"]) > datetime.now() - timedelta(days=1))
+
+        text = f"📊 إحصائيات مفصلة\n\n" \
+               f"👥 إجمالي المسجلين: {total}\n" \
+               f"📈 متوسط الدعوات: {avg:.1f}\n" \
+               f"🔥 نشطين اليوم: {active_today}\n" \
+               f"📊 إجمالي الدخول: {data['stats']['total_joins']}\n" \
+               f"💬 رسائل الدعم: {data['stats']['total_messages']}"
+
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("⬅️ رجوع", callback_data="admin_panel"))
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+
+    elif call.data == "banned_list":
+        banned = data["banned"]
+        text = f"🚫 المحظورين ({len(banned)})\n\n"
+        if not banned:
+            text += "لا يوجد محظورين"
+        else:
+            for uid in banned[:20]: # اول 20 بس
+                text += f"• {uid}\n"
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("⬅️ رجوع", callback_data="admin_panel"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
 
     elif call.data == "reset_confirm":
@@ -215,17 +309,86 @@ def handle_buttons(call):
             types.InlineKeyboardButton("✅ أيوة صفر", callback_data="reset_yes"),
             types.InlineKeyboardButton("❌ لا", callback_data="admin_panel")
         )
-        bot.edit_message_text("متأكد عايز تصفر كل الدعوات؟", call.message.chat.id, call.message.message_id, reply_markup=markup)
+        bot.edit_message_text("⚠️ تحذير: سيتم مسح كل البيانات!\nمتأكد عايز تصفر كل الدعوات؟",
+                            call.message.chat.id, call.message.message_id, reply_markup=markup)
 
     elif call.data == "reset_yes":
-        data = {"users": {}, "banned": [], "stats": {"total_joins": 0}}
+        data = {"users": {}, "banned": [], "stats": {"total_joins": 0, "total_messages": 0}, "support": {}, "broadcast": {"waiting": False}, "antispam": {}}
         save_data(data)
-        bot.answer_callback_query(call.id, "تم التصفير", show_alert=True)
+        bot.answer_callback_query(call.id, "تم التصفير بنجاح", show_alert=True)
         handle_buttons(types.CallbackQuery(id=call.id, from_user=call.from_user, message=call.message, data="admin_panel"))
 
     elif call.data == "back_start":
         bot.delete_message(call.message.chat.id, call.message.message_id)
         start(call.message)
+
+# ========== نظام الدعم الفني والإذاعة ==========
+@bot.message_handler(func=lambda msg: msg.chat.type == 'private', content_types=['text', 'photo', 'document', 'voice', 'video', 'sticker'])
+def handle_private(msg):
+    global data
+    user_id = str(msg.from_user.id)
+
+    # حماية من السبام
+    if not check_spam(user_id) and msg.from_user.id!= OWNER_ID:
+        return bot.reply_to(msg, "⚠️ اهدى شوية! بتبعت رسايل كتير")
+
+    # لو الأدمن بيرد على رسالة عضو
+    if msg.from_user.id == OWNER_ID and msg.reply_to_message:
+        try:
+            target_id = msg.reply_to_message.text.split("ID: ")[1].split("\n")[0]
+            bot.copy_message(target_id, msg.chat.id, msg.message_id)
+            bot.reply_to(msg, "✅ تم إرسال ردك للعضو")
+        except:
+            bot.reply_to(msg, "❌ فشل الإرسال. اعمل Reply على رسالة العضو")
+        return
+
+    # لو الأدمن في وضع الإذاعة
+    if msg.from_user.id == OWNER_ID and data["broadcast"]["waiting"]:
+        if msg.text == "/cancel":
+            data["broadcast"]["waiting"] = False
+            save_data(data)
+            return bot.reply_to(msg, "❌ تم إلغاء الإذاعة")
+
+        data["broadcast"]["waiting"] = False
+        save_data(data)
+
+        # بدء الإذاعة في ثريد منفصل
+        threading.Thread(target=broadcast_message, args=(msg,)).start()
+        bot.reply_to(msg, f"📢 جاري إرسال الإذاعة لـ {len(data['users'])} عضو...")
+        return
+
+    # لو عضو عادي بعت رسالة للبوت
+    if user_id in data.get("support", {}):
+        del data["support"][user_id]
+        save_data(data)
+
+    data["stats"]["total_messages"] += 1
+    save_data(data)
+
+    # بنبعت للأدمن
+    user_info = f"📨 رسالة جديدة من الدعم\n\n" \
+                f"👤 الاسم: {msg.from_user.first_name}\n" \
+                f"🆔 ID: {msg.from_user.id}\n" \
+                f"🔗 يوزر: @{msg.from_user.username}\n" \
+                f"📊 دعواته: {data['users'].get(user_id, {}).get('count', 0)}\n\n" \
+                f"📝 الرسالة:"
+
+    bot.send_message(OWNER_ID, user_info)
+    bot.forward_message(OWNER_ID, msg.chat.id, msg.message_id)
+    bot.reply_to(msg, "✅ تم إرسال رسالتك للمدير بنجاح\nسيتم الرد عليك قريباً ⏳")
+
+def broadcast_message(msg):
+    success = 0
+    failed = 0
+    for user_id in data["users"].keys():
+        try:
+            bot.copy_message(user_id, msg.chat.id, msg.message_id)
+            success += 1
+            time.sleep(0.05) # عشان مناخدش بلوك من تيليجرام
+        except:
+            failed += 1
+
+    bot.send_message(OWNER_ID, f"✅ تمت الإذاعة\n\nنجح: {success}\nفشل: {failed}")
 
 @bot.message_handler(commands=['add'])
 def add_invites(msg):
@@ -234,7 +397,7 @@ def add_invites(msg):
     try:
         _, user_id, amount = msg.text.split()
         if user_id not in data["users"]:
-            data["users"][user_id] = {"count": 0, "name": "Unknown", "got_link": False, "invited": []}
+            data["users"][user_id] = {"count": 0, "name": "Unknown", "got_link": False, "invited": [], "join_date": str(datetime.now())}
         data["users"][user_id]["count"] += int(amount)
         save_data(data)
         bot.reply_to(msg, f"✅ تم إضافة {amount} دعوة للعضو {user_id}")
@@ -254,12 +417,25 @@ def ban_user(msg):
     except:
         bot.reply_to(msg, "❌ استخدم: /ban user_id")
 
+@bot.message_handler(commands=['unban'])
+def unban_user(msg):
+    global data
+    if msg.from_user.id!= OWNER_ID: return
+    try:
+        user_id = msg.text.split()[1]
+        if user_id in data["banned"]:
+            data["banned"].remove(user_id)
+            save_data(data)
+        bot.reply_to(msg, f"✅ تم فك حظر {user_id}")
+    except:
+        bot.reply_to(msg, "❌ استخدم: /unban user_id")
+
 @bot.message_handler(commands=['id'])
 def get_id(msg):
     bot.reply_to(msg, f"🆔 ايدي الجروب: `{msg.chat.id}`\nايديك: `{msg.from_user.id}`", parse_mode="Markdown")
 
 if __name__ == '__main__':
-    print("✅ Bot Pro is running...")
+    print("✅ Bot Pro Max is running...")
     bot.remove_webhook()
     bot.delete_webhook(drop_pending_updates=True)
     time.sleep(1)
