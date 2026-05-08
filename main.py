@@ -7,7 +7,7 @@ from datetime import datetime
 TOKEN = os.environ.get('TOKEN')
 OWNER_ID = 8085768728 # ايديك من @userinfobot
 SECRET_GROUP_LINK = "https://t.me/+eDUHBBpm3fg4N2Jk" # رابط الجروب السري
-PUBLIC_GROUP_LINK = "https://esuuugg" # رابط الجروب العام اللي بتجمع فيه الدعوات
+PUBLIC_GROUP_LINK = "https://t.me/esuuugg" # رابط الجروب العام اللي بتجمع فيه الدعوات
 REQUIRED_INVITES = 50 # عدد الدعوات المطلوب
 MAIN_GROUP_ID = -1003969652936 # ايدي الجروب العام من @RawDataBot
 # ======================================
