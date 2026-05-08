@@ -15,8 +15,8 @@ MAIN_GROUP_ID = -1003969652936 # ايدي الجروب العام من @RawDataB
 bot = telebot.TeleBot(TOKEN)
 DATA_FILE = "invites_data.json"
 
-# ده الرابط اللي بيفتح الجروب + يطلع زرار "Add Member" فوق
-ADD_MEMBERS_DIRECT = f"tg://resolve?domain={PUBLIC_GROUP_USERNAME}&start=addmembers"
+# ده الرابط اللي بيشتغل - يفتح الجروب وفيه زرار إضافة أعضاء فوق
+ADD_MEMBERS_DIRECT = f"https://t.me/{PUBLIC_GROUP_USERNAME}"
 
 RANKS = {0: "مبتدئ 🐣", 10: "نشيط ⚡", 25: "محترف 🔥", 50: "أسطورة 👑", 100: "امبراطور 💎"}
 
@@ -79,7 +79,7 @@ def send_welcome(inviter_id, inviter_name, new_user_id):
 
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton("🔥 اضغط هنا للدخول للجروب السري", url=SECRET_GROUP_LINK))
-        markup.add(types.InlineKeyboardButton(f"👥 إضافة {REQUIRED_INVITES} عضو الآن", url=ADD_MEMBERS_DIRECT))
+        markup.add(types.InlineKeyboardButton(f"👥 إضافة أعضاء", url=ADD_MEMBERS_DIRECT))
 
         bot.send_message(MAIN_GROUP_ID, text, reply_markup=markup)
 
