@@ -1,6 +1,6 @@
 import telebot
 from telebot import types
-import json, os, time, random
+import json, os, time
 from datetime import datetime
 
 # ========== الإعدادات - غير دول ==========
@@ -8,7 +8,7 @@ TOKEN = os.environ.get('TOKEN') # سيبه كده وحط التوكن في Railw
 OWNER_ID = 8085768728 # ايديك من @userinfobot
 SECRET_GROUP_LINK = "https://t.me/+eDUHBBpm3fg4N2Jk" # رابط الجروب السري
 REQUIRED_INVITES = 50 # عدد الدعوات المطلوب
-MAIN_GROUP_ID = -1003969652936 # ايدي الجروب العام من @RawDataBot
+MAIN_GROUP_ID = -1003969652936 #
 # ======================================
 
 bot = telebot.TeleBot(TOKEN)
@@ -17,7 +17,7 @@ DATA_FILE = "invites_data.json"
 RANKS = {0: "مبتدئ 🐣", 10: "نشيط ⚡", 25: "محترف 🔥", 50: "أسطورة 👑", 100: "امبراطور 💎"}
 
 def get_rank(count):
-    rank = "مبتدئ"
+    rank = "مبتدئ 🐣"
     for req, r in RANKS.items():
         if count >= req: rank = r
     return rank
@@ -156,8 +156,11 @@ def handle_buttons(call):
     elif call.data == "top10":
         sorted_users = sorted(data["users"].items(), key=lambda x: x[1]["count"], reverse=True)[:10]
         text = "🏆 توب 10 أعضاء\n\n"
-        for i, (uid, info) in enumerate(sorted_users, 1):
-            text += f"{i}. {info['name']} - {info['count']} دعوة {get_rank(info['count'])}\n"
+        if not sorted_users:
+            text += "مفيش دعوات لسه 😢"
+        else:
+            for i, (uid, info) in enumerate(sorted_users, 1):
+                text += f"{i}. {info['name']} - {info['count']} دعوة {get_rank(info['count'])}\n"
         bot.answer_callback_query(call.id)
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=call.message.reply_markup)
 
@@ -191,14 +194,6 @@ def handle_buttons(call):
                f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
         markup = types.InlineKeyboardMarkup(row_width=2)
-        markup.add(
-            types.InlineKeyboardButton("📢 إذاعة", callback_data="broadcast_start"),
-            types.InlineKeyboardButton("🏆 توب 50", callback_data="top50")
-        )
-        markup.add(
-            types.InlineKeyboardButton("➕ إضافة دعوات", callback_data="add_invites"),
-            types.InlineKeyboardButton("🚫 حظر عضو", callback_data="ban_user")
-        )
         markup.add(types.InlineKeyboardButton("⬅️ رجوع", callback_data="back_start"))
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
 
@@ -231,9 +226,14 @@ def ban_user(msg):
     except:
         bot.reply_to(msg, "❌ استخدم: /ban user_id")
 
+@bot.message_handler(commands=['id'])
+def get_id(msg):
+    bot.reply_to(msg, f"🆔 ايدي الجروب ده: `{msg.chat.id}`\nايديك انت: `{msg.from_user.id}`", parse_mode="Markdown")
+
 if __name__ == '__main__':
     print("✅ Bot Pro is running...")
     bot.remove_webhook()
     bot.delete_webhook(drop_pending_updates=True)
     time.sleep(1)
-    bot.infinity_polling(skip_pending=True)
+    # ده السطر اللي بيخلي البوت يستقبل دخول الأعضاء
+    bot.infinity_polling(allowed_updates=['chat_member', 'message', 'callback_query'], skip_pending=True)
