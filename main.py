@@ -219,7 +219,7 @@ def handle_buttons(call):
 
     elif call.data == "contact_support":
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "📝 اكتب رسالتك للدعم الفني هنا\nسيتم الرد عليك في أقرب وقت 👨‍💻")
+        bot.send_message(call.message.chat.id, "📝 اكتب رسالتك للمدير  \nسيتم الرد عليك في أقرب وقت 👨‍💻")
         data["support"][user_id] = "waiting"
         save_data(data)
 
