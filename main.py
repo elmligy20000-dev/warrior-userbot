@@ -5,11 +5,11 @@ from datetime import datetime, timedelta
 
 # ========== الإعدادات - غير دول ==========
 TOKEN = os.environ.get('TOKEN') # حطه في Variables في Railway
-OWNER_ID = 8085768728 # ايديك من @userinfobot
-SECRET_GROUP_LINK = "https://t.me/+eDUHBBpm3fg4N2Jk" # رابط الجروب السري
-PUBLIC_GROUP_USERNAME = "esuuugg" # يوزر الجروب العام بدون @
+OWNER_ID = 6454423322 # ايديك من @userinfobot
+SECRET_GROUP_LINK = "https://t.me/+VrkIJm9y324zZWM0" # رابط الجروب السري
+PUBLIC_GROUP_USERNAME = "O_YGOWW" # يوزر الجروب العام بدون @
 REQUIRED_INVITES = 50 # عدد الدعوات المطلوب
-MAIN_GROUP_ID = -1003969652936 # ايدي الجروب العام من @RawDataBot
+MAIN_GROUP_ID = -1003548020892 # ايدي الجروب العام من @RawDataBot
 # ======================================
 
 bot = telebot.TeleBot(TOKEN)
