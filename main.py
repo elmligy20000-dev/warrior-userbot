@@ -17,10 +17,13 @@ DATA_FILE = "invites_data.json"
 
 ADD_MEMBERS_DIRECT = f"https://t.me/{PUBLIC_GROUP_USERNAME}"
 
-RANKS = {0: "طالب سيئ 🐣", 10: "طالب نشيط ⚡", 25: "محترف 🔥", 50: "أسطورة 👑", 100: "طالب مجتهد 💎", 200: "طالب ممتاز 🏛️"}
+RANKS = {0: "مبتدئ 🐣", 10: "نشيط ⚡", 25: "محترف 🔥", 50: "أسطورة 👑", 100: "امبراطور 💎", 200: "فرعون 🏛️"}
+
+# بفر لتجميع الإضافات - مفتاح: inviter_id, قيمة: {count, timer, names}
+pending_invites = {}
 
 def get_rank(count):
-    rank = "طالب سيئ 🐣"
+    rank = "مبتدئ 🐣"
     for req, r in RANKS.items():
         if count >= req: rank = r
     return rank
@@ -46,25 +49,78 @@ def save_data(data_to_save):
 
 data = load_data()
 
-# ========== حماية من السبام ==========
 def check_spam(user_id):
     now = time.time()
     user_id = str(user_id)
     if user_id not in data["antispam"]:
         data["antispam"][user_id] = []
-
-    # امسح الرسايل القديمة اكتر من 10 ثواني
     data["antispam"][user_id] = [t for t in data["antispam"][user_id] if now - t < 10]
     data["antispam"][user_id].append(now)
-
-    # لو بعت اكتر من 5 رسايل في 10 ثواني
     if len(data["antispam"][user_id]) > 5:
         return False
     return True
 
-def send_welcome(inviter_id, inviter_name, new_user_id):
-    global data
-    if inviter_id == new_user_id or inviter_id in data["banned"]: return
+# ========== إرسال رسالة الترحيب المجمعة ==========
+def send_batch_welcome(inviter_id):
+    global data, pending_invites
+
+    if inviter_id not in pending_invites:
+        return
+
+    batch = pending_invites.pop(inviter_id)
+    added_count = batch["count"]
+    inviter_name = batch["name"]
+
+    if inviter_id not in data["users"]:
+        data["users"][inviter_id] = {
+            "count": 0, "name": inviter_name,
+            "got_link": False, "invited": [],
+            "join_date": str(datetime.now()),
+            "last_active": str(datetime.now())
+        }
+
+    total_count = data["users"][inviter_id]["count"]
+    remaining = max(0, REQUIRED_INVITES - total_count)
+    data["users"][inviter_id]["last_active"] = str(datetime.now())
+    save_data(data)
+
+    print(f"[LOG] إرسال ملخص: {inviter_name} ضاف {added_count} = المجموع {total_count}")
+
+    # لو وصل للعدد المطلوب
+    if total_count >= REQUIRED_INVITES and not data["users"][inviter_id]["got_link"]:
+        data["users"][inviter_id]["got_link"] = True
+        save_data(data)
+
+        text = f"✅ «الطالب™» {inviter_name} «اضاف «{total_count}»\n🔥√\n\n√ وتم تسجيلة في الجروب السري 👨‍💻\n\n👇 انضم هنـا ليتم قبولك فالجروب السري ➡️\n\n{SECRET_GROUP_LINK}\n\n📚 لو عيز تتسجل انتا كمان ضيفه {REQUIRED_INVITES} هـنـا\n\n√ ليتم قبولك في الجروب السري ➡️"
+
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(types.InlineKeyboardButton("🔥 اضغط هنا للدخول للجروب السري", url=SECRET_GROUP_LINK))
+        markup.add(types.InlineKeyboardButton(f"👥 إضافة أعضاء", url=ADD_MEMBERS_DIRECT))
+
+        bot.send_message(MAIN_GROUP_ID, text, reply_markup=markup)
+
+        try:
+            bot.send_message(inviter_id, f"🎊 مبروك يا {inviter_name}\nوصلت {total_count} دعوة {get_rank(total_count)}\n\nادخل الجروب السري من هنا:\n{SECRET_GROUP_LINK}")
+        except: pass
+
+    else:
+        # رسالة واحدة للكل
+        if added_count == 1:
+            text = f"✅ «الطالب™» {inviter_name} «اضاف «{total_count}»\n🔥\n\n⏳ فاضلك {remaining} دعوة وتدخل الجروب السري\n\n📚 لو عيز تتسجل انتا كمان ضيفه {REQUIRED_INVITES} هـنـا"
+        else:
+            text = f"✅ «الطالب™» {inviter_name} «اضاف «{added_count}» عضو\n🔥\n\n📊 إجمالي دعواتك: {total_count}\n⏳ فاضلك {remaining} دعوة وتدخل الجروب السري\n\n📚 لو عيز تتسجل انتا كمان ضيفه {REQUIRED_INVITES} هـنـا"
+
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton(f"👥 إضافة أعضاء", url=ADD_MEMBERS_DIRECT))
+
+        bot.send_message(MAIN_GROUP_ID, text, reply_markup=markup)
+
+# ========== تسجيل الإضافة في البفر ==========
+def queue_invite(inviter_id, inviter_name, new_user_id):
+    global data, pending_invites
+
+    if inviter_id == new_user_id or inviter_id in data["banned"]:
+        return
 
     try:
         new_user = bot.get_chat_member(MAIN_GROUP_ID, new_user_id).user
@@ -86,35 +142,24 @@ def send_welcome(inviter_id, inviter_name, new_user_id):
 
     data["users"][inviter_id]["invited"].append(new_user_id)
     data["users"][inviter_id]["count"] = len(data["users"][inviter_id]["invited"])
-    data["users"][inviter_id]["last_active"] = str(datetime.now())
     save_data(data)
 
-    count = data["users"][inviter_id]["count"]
-    remaining = max(0, REQUIRED_INVITES - count)
+    # ضيف للبفر
+    if inviter_id not in pending_invites:
+        pending_invites[inviter_id] = {"count": 0, "name": inviter_name, "timer": None}
 
-    if count >= REQUIRED_INVITES and not data["users"][inviter_id]["got_link"]:
-        data["users"][inviter_id]["got_link"] = True
-        save_data(data)
+    pending_invites[inviter_id]["count"] += 1
 
-        text = f"✅ ( الطالب ) {inviter_name} «اضاف «{count}»\n🔥√\n\n√ وتم تسجيلة في الجروب السري 👨‍💻\n\n👇 انضم هنـا ليتم قبولك فالجروب السري ➡️\n\n{SECRET_GROUP_LINK}\n\n📚 لو عيز تتسجل انتا كمان ضيف {REQUIRED_INVITES} هـنـا\n\n√ ليتم قبولك في الجروب السري ➡️"
+    # الغي التايمر القديم لو موجود
+    if pending_invites[inviter_id]["timer"]:
+        pending_invites[inviter_id]["timer"].cancel()
 
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(types.InlineKeyboardButton("🔥 اضغط هنا للدخول للجروب السري", url=SECRET_GROUP_LINK))
-        markup.add(types.InlineKeyboardButton(f"👥 ضيف عشان تدخل السري", url=ADD_MEMBERS_DIRECT))
+    # اعمل تايمر جديد 3 ثواني - لو مفيش اضافات تاني هيبعت الرسالة
+    timer = threading.Timer(3.0, send_batch_welcome, args=[inviter_id])
+    pending_invites[inviter_id]["timer"] = timer
+    timer.start()
 
-        bot.send_message(MAIN_GROUP_ID, text, reply_markup=markup)
-
-        try:
-            bot.send_message(inviter_id, f"🎊 مبروك يا {inviter_name}\nوصلت {count} دعوة {get_rank(count)}\n\nادخل الجروب السري من هنا:\n{SECRET_GROUP_LINK}")
-        except: pass
-
-    else:
-        text = f"✅ ( الطالب ) {inviter_name} «اضاف «{count}»\n🔥\n\n⏳ فاضلك {remaining} دعوة وتدخل الجروب السري\n\n📚 لو عيز تتسجل انتا كمان ضيفه {REQUIRED_INVITES} هـنـا"
-
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton(f"👥 ضيف عشان تدخل السري", url=ADD_MEMBERS_DIRECT))
-
-        bot.send_message(MAIN_GROUP_ID, text, reply_markup=markup)
+    print(f"[LOG] تم تجميع: {inviter_name} = +1 (المجموع المؤقت {pending_invites[inviter_id]['count']})")
 
 @bot.chat_member_handler()
 def track_invites_chat_member(message: types.ChatMemberUpdated):
@@ -125,7 +170,7 @@ def track_invites_chat_member(message: types.ChatMemberUpdated):
     if old.status in ['left', 'kicked'] and new.status == 'member':
         inviter_id = str(message.from_user.id)
         new_user_id = str(new.user.id)
-        send_welcome(inviter_id, message.from_user.first_name, new_user_id)
+        queue_invite(inviter_id, message.from_user.first_name, new_user_id)
 
     elif old.status == 'member' and new.status in ['left', 'kicked']:
         user_id = str(new.user.id)
@@ -146,7 +191,7 @@ def track_invites_new_member(message):
 
     for new_user in message.new_chat_members:
         if new_user.id == bot.get_me().id: continue
-        send_welcome(inviter_id, inviter_name, str(new_user.id))
+        queue_invite(inviter_id, inviter_name, str(new_user.id))
 
 @bot.message_handler(commands=['start'])
 def start(msg):
@@ -161,7 +206,7 @@ def start(msg):
         types.InlineKeyboardButton("🏆 التوب 10", callback_data="top10")
     )
     markup.add(types.InlineKeyboardButton(f"👥 إضافة أعضاء", url=ADD_MEMBERS_DIRECT))
-    markup.add(types.InlineKeyboardButton("📞 تواصل مع المدير", callback_data="contact_support"))
+    markup.add(types.InlineKeyboardButton("📞 تواصل مع الدعم", callback_data="contact_support"))
 
     if msg.from_user.id == OWNER_ID:
         markup.add(
@@ -171,7 +216,7 @@ def start(msg):
 
     text = f"مرحباً {msg.from_user.first_name} 👋\n\n" \
            f"🎯 المطلوب: {REQUIRED_INVITES} دعوة\n" \
-           f"📈 ضفت: {count}\n" \
+           f"📈 دعواتك: {count}\n" \
            f"🏅 رانك: {rank}\n" \
            f"⏳ المتبقي: {max(0, REQUIRED_INVITES - count)}\n\n" \
            f"دوس على الزرار وضيف أصحابك واستلم الجروب السري تلقائي ⚡"
@@ -191,7 +236,7 @@ def handle_buttons(call):
 
         text = f"📊 إحصائياتك\n\n" \
                f"👤 الاسم: {call.from_user.first_name}\n" \
-               f"📥 ضفت: {count}\n" \
+               f"📥 الدعوات: {count}\n" \
                f"🏅 الرانك: {get_rank(count)}\n" \
                f"🥇 ترتيبك: {position}\n" \
                f"⏳ المتبقي: {max(0, REQUIRED_INVITES - count)}\n" \
@@ -219,7 +264,7 @@ def handle_buttons(call):
 
     elif call.data == "contact_support":
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "📝 اكتب رسالتك للمدير  \nسيتم الرد عليك في أقرب وقت 👨‍💻")
+        bot.send_message(call.message.chat.id, "📝 اكتب رسالتك للدعم الفني هنا\nسيتم الرد عليك في أقرب وقت 👨‍💻")
         data["support"][user_id] = "waiting"
         save_data(data)
 
@@ -234,7 +279,7 @@ def handle_buttons(call):
 
         text = f"👑 لوحة التحكم المتطورة\n\n" \
                f"👥 إجمالي الأعضاء: {total_users}\n" \
-               f"📨 إجمالي اضافتك: {total_invites}\n" \
+               f"📨 إجمالي الدعوات: {total_invites}\n" \
                f"✅ وصلوا للهدف: {active}\n" \
                f"🚫 المحظورين: {banned}\n" \
                f"📊 دخل الجروب: {data['stats']['total_joins']}\n" \
@@ -254,9 +299,7 @@ def handle_buttons(call):
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
 
     elif call.data == "broadcast_menu":
-        if call.from_user.id!= OWNER_ID:
-            return bot.answer_callback_query(call.id, "❌ للمشرف فقط", show_alert=True)
-
+        if call.from_user.id!= OWNER_ID: return
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("📝 بدء الإذاعة", callback_data="start_broadcast"))
         markup.add(types.InlineKeyboardButton("⬅️ رجوع", callback_data="admin_panel"))
@@ -271,11 +314,7 @@ def handle_buttons(call):
 
     elif call.data == "detailed_stats":
         total = len(data["users"])
-        if total == 0:
-            avg = 0
-        else:
-            avg = sum(u["count"] for u in data["users"].values()) / total
-
+        avg = sum(u["count"] for u in data["users"].values()) / total if total > 0 else 0
         active_today = sum(1 for u in data["users"].values()
                           if "last_active" in u and
                           datetime.fromisoformat(u["last_active"]) > datetime.now() - timedelta(days=1))
@@ -297,7 +336,7 @@ def handle_buttons(call):
         if not banned:
             text += "لا يوجد محظورين"
         else:
-            for uid in banned[:20]: # اول 20 بس
+            for uid in banned[:20]:
                 text += f"• {uid}\n"
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("⬅️ رجوع", callback_data="admin_panel"))
@@ -322,17 +361,14 @@ def handle_buttons(call):
         bot.delete_message(call.message.chat.id, call.message.message_id)
         start(call.message)
 
-# ========== نظام الدعم الفني والإذاعة ==========
 @bot.message_handler(func=lambda msg: msg.chat.type == 'private', content_types=['text', 'photo', 'document', 'voice', 'video', 'sticker'])
 def handle_private(msg):
     global data
     user_id = str(msg.from_user.id)
 
-    # حماية من السبام
     if not check_spam(user_id) and msg.from_user.id!= OWNER_ID:
         return bot.reply_to(msg, "⚠️ اهدى شوية! بتبعت رسايل كتير")
 
-    # لو الأدمن بيرد على رسالة عضو
     if msg.from_user.id == OWNER_ID and msg.reply_to_message:
         try:
             target_id = msg.reply_to_message.text.split("ID: ")[1].split("\n")[0]
@@ -342,7 +378,6 @@ def handle_private(msg):
             bot.reply_to(msg, "❌ فشل الإرسال. اعمل Reply على رسالة العضو")
         return
 
-    # لو الأدمن في وضع الإذاعة
     if msg.from_user.id == OWNER_ID and data["broadcast"]["waiting"]:
         if msg.text == "/cancel":
             data["broadcast"]["waiting"] = False
@@ -351,13 +386,10 @@ def handle_private(msg):
 
         data["broadcast"]["waiting"] = False
         save_data(data)
-
-        # بدء الإذاعة في ثريد منفصل
         threading.Thread(target=broadcast_message, args=(msg,)).start()
         bot.reply_to(msg, f"📢 جاري إرسال الإذاعة لـ {len(data['users'])} عضو...")
         return
 
-    # لو عضو عادي بعت رسالة للبوت
     if user_id in data.get("support", {}):
         del data["support"][user_id]
         save_data(data)
@@ -365,7 +397,6 @@ def handle_private(msg):
     data["stats"]["total_messages"] += 1
     save_data(data)
 
-    # بنبعت للأدمن
     user_info = f"📨 رسالة جديدة من الدعم\n\n" \
                 f"👤 الاسم: {msg.from_user.first_name}\n" \
                 f"🆔 ID: {msg.from_user.id}\n" \
@@ -384,10 +415,9 @@ def broadcast_message(msg):
         try:
             bot.copy_message(user_id, msg.chat.id, msg.message_id)
             success += 1
-            time.sleep(0.05) # عشان مناخدش بلوك من تيليجرام
+            time.sleep(0.05)
         except:
             failed += 1
-
     bot.send_message(OWNER_ID, f"✅ تمت الإذاعة\n\nنجح: {success}\nفشل: {failed}")
 
 @bot.message_handler(commands=['add'])
