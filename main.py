@@ -4,7 +4,7 @@ import json, os, time, threading
 from datetime import datetime, timedelta
 
 # ========== الإعدادات - غير دول ==========
-TOKEN = os.environ.get('TOKEN') # حطه في Variables في Railway
+BOT_TOKEN = os.environ.get('BOT_TOKEN') # حطه في Variables في Railway
 OWNER_ID = 6409691924 # ايديك من @userinfobot
 SECRET_GROUP_LINK = "https://t.me/+VrkIJm9y324zZWM0" # رابط الجروب السري
 PUBLIC_GROUP_USERNAME = "O_YGOWW" # يوزر الجروب العام بدون @
@@ -12,7 +12,7 @@ REQUIRED_INVITES = 50 # عدد الدعوات المطلوب
 MAIN_GROUP_ID = -1003548020892 # ايدي الجروب العام من @RawDataBot
 # ======================================
 
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot(BOT_TOKEN)
 DATA_FILE = "invites_data.json"
 
 ADD_MEMBERS_DIRECT = f"https://t.me/{PUBLIC_GROUP_USERNAME}"
