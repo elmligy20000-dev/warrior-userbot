@@ -91,7 +91,7 @@ def send_batch_welcome(inviter_id):
         data["users"][inviter_id]["got_link"] = True
         save_data(data)
 
-        text = f"✅ «الطالب™» {inviter_name} «اضاف «{total_count}»\n🔥√\n\n√ وتم تسجيلة في الجروب السري 👨‍💻\n\n👇 انضم هنـا ليتم قبولك فالجروب السري ➡️\n\n{SECRET_GROUP_LINK}\n\n📚 لو عيز تتسجل انتا كمان ضيفه {REQUIRED_INVITES} هـنـا\n\n√ ليتم قبولك في الجروب السري ➡️"
+        text = f"✅ «الطالب™» {inviter_name} «اضاف «{total_count}»\n🔥√\n\n√ وتم تسجيلة في الجروب السري 👨‍💻\n\n👇 انضم هنـا ليتم قبولك فالجروب السري ➡️\n\n{SECRET_GROUP_LINK}\n\n📚 لو عيز تتسجل انتا كمان ضيف {REQUIRED_INVITES} هـنـا\n\n√ ليتم قبولك في الجروب السري ➡️"
 
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton("🔥 اضغط هنا للدخول للجروب السري", url=SECRET_GROUP_LINK))
@@ -106,9 +106,9 @@ def send_batch_welcome(inviter_id):
     else:
         # رسالة واحدة للكل
         if added_count == 1:
-            text = f"✅ «الطالب™» {inviter_name} «اضاف «{total_count}»\n🔥\n\n⏳ فاضلك {remaining} دعوة وتدخل الجروب السري\n\n📚 لو عيز تتسجل انتا كمان ضيفه {REQUIRED_INVITES} هـنـا"
+            text = f"❌ «الطالب™» {inviter_name} «اضاف «{total_count}»\n🔥\n\n⏳ فاضلك {remaining} دعوة وتدخل الجروب السري\n\n📚 لو عيز تتسجل انتا كمان ضيف {REQUIRED_INVITES} هـنـا"
         else:
-            text = f"✅ «الطالب™» {inviter_name} «اضاف «{added_count}» عضو\n🔥\n\n📊 إجمالي دعواتك: {total_count}\n⏳ فاضلك {remaining} دعوة وتدخل الجروب السري\n\n📚 لو عيز تتسجل انتا كمان ضيفه {REQUIRED_INVITES} هـنـا"
+            text = f"❌ «الطالب™» {inviter_name} «اضاف «{added_count}» عضو\n🔥\n\n📊 إجمالي دعواتك: {total_count}\n⏳ فاضلك {remaining} دعوة وتدخل الجروب السري\n\n📚 لو عيز تتسجل انتا كمان ضيف {REQUIRED_INVITES} هـنـا"
 
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(f"👥 إضافة أعضاء", url=ADD_MEMBERS_DIRECT))
