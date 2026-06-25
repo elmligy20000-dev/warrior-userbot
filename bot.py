@@ -1,23 +1,3 @@
-#@shmrye
-"""
-Telegram Numbers Selling Bot with OTP Service Integration
-
-Requirements:
-- Python 3.7+
-- python-telegram-bot==13.7
-- requests==2.26.0
-- sqlite3 (built-in)
-
-Install requirements:
-pip install python-telegram-bot==13.7 requests==2.26.0
-
-Configuration:
-1. Replace YOUR_BOT_TOKEN with your actual bot token
-2. Set up admin password using /admin command
-3. Configure CryptoBot token in bot settings
-4. Add required channels for subscription
-"""
-
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, ChatPermissions
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext, MessageHandler, Filters
@@ -109,6 +89,10 @@ def init_db():
     conn.close()
 
 init_db()
+API_ID = 20867472
+API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
+BOT_TOKEN = "8914045842:AAEz6MNsGTShwob_M3H0ECy8eOkl2nT5gno"
+ADMIN_ID = 932862531
 
 # Premium Emoji constants
 COMPUTER = "<tg-emoji emoji-id=\"5886664420502805908\">💻</tg-emoji>"
