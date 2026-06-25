@@ -6,21 +6,14 @@ from telethon.sessions import StringSession
 from telethon.tl.functions.messages import ImportChatInviteRequest, CheckChatInviteRequest
 from telethon.tl.functions.channels import JoinChannelRequest, LeaveChannelRequest
 from telethon.tl.functions.contacts import ResolveUsernameRequest
-from telethon.errors import FloodWaitError, SessionPasswordNeededError, PhoneCodeInvalidError, PhoneNumberInvalidError, ChatAdminRequiredError, UserAlreadyParticipantError, InviteHashExpiredError, InviteHashInvalidError, UserPrivacyRestrictedError
+from telethon.errors import FloodWaitError, SessionPasswordNeededError, PhoneCodeInvalidError, PhoneNumberInvalidError
 from datetime import datetime
 import sqlite3
 import re
 from typing import List, Tuple, Optional
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('bot.log'),
-        logging.StreamHandler()
-    ]
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Database setup
@@ -78,7 +71,7 @@ API_ID = 20867472
 API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
 BOT_TOKEN = "8837648752:AAHICVc71aEknIjgrE_FoOH2nln7oEOSNUA"
 ADMIN_ID = 932862531
-DEVELOPER_ID = 932862531  # Replace with developer ID
+DEVELOPER_ID = 932862531
 
 bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
@@ -124,24 +117,19 @@ async def check_subscription(user_id: int) -> Tuple[bool, str]:
     if not settings['required_channel'] and not settings['required_group']:
         return True, ""
 
+    client = await bot.get_entity(user_id)
+    if not client:
+        return False, "لا يمكن التحقق من اشتراكك"
+
     try:
         if settings['required_channel']:
             try:
                 channel = await bot.get_entity(settings['required_channel'])
-                try:
-                    participant = await bot(functions.channels.GetParticipantRequest(
-                        channel=channel.id,
-                        participant=user_id
-                    ))
-                    if not participant:
-                        return False, f"يجب الاشتراك في القناة: @{settings['required_channel']}"
-                except (ValueError, ChatAdminRequiredError):
-                    # Try alternative method
-                    try:
-                        await bot.get_participants(channel)
-                        return True, ""
-                    except:
-                        return False, f"يجب الاشتراك في القناة: @{settings['required_channel']}"
+                if not await bot(functions.channels.GetParticipantRequest(
+                    channel=channel,
+                    participant=user_id
+                )):
+                    return False, f"يجب الاشتراك في القناة: @{settings['required_channel']}"
             except Exception as e:
                 logger.error(f"Error checking channel subscription: {e}")
                 return False, f"حدث خطأ أثناء التحقق من القناة: @{settings['required_channel']}"
@@ -149,19 +137,8 @@ async def check_subscription(user_id: int) -> Tuple[bool, str]:
         if settings['required_group']:
             try:
                 group = await bot.get_entity(settings['required_group'])
-                try:
-                    participant = await bot(functions.messages.GetFullChatRequest(
-                        chat_id=group.id
-                    ))
-                    if not participant:
-                        return False, f"يجب الانضمام إلى المجموعة: @{settings['required_group']}"
-                except (ValueError, ChatAdminRequiredError):
-                    # Try alternative method
-                    try:
-                        await bot.get_participants(group)
-                        return True, ""
-                    except:
-                        return False, f"يجب الانضمام إلى المجموعة: @{settings['required_group']}"
+                if not await bot(functions.messages.GetFullChatRequest(chat_id=group.id)):
+                    return False, f"يجب الانضمام إلى المجموعة: @{settings['required_group']}"
             except Exception as e:
                 logger.error(f"Error checking group subscription: {e}")
                 return False, f"حدث خطأ أثناء التحقق من المجموعة: @{settings['required_group']}"
@@ -186,8 +163,7 @@ async def get_user_client(user_id: int) -> Optional[TelegramClient]:
             StringSession(result['session']),
             API_ID,
             API_HASH,
-            device_model="iPhone 17 Pro",
-            timeout=30
+            device_model="iPhone 17 Pro"
         )
         await client.connect()
         if not await client.is_user_authorized():
@@ -230,7 +206,7 @@ def create_main_keyboard(user_id: int) -> list:
         [Button.inline("📋 جلب البيانات", b"fetch_data")],
         [Button.inline("🔗 الانضمام التلقائي", b"auto_join")],
         [Button.inline("👤 معلومات حسابي", b"account_info")],
-        [Button.inline("👨‍💻 المطور", b"developer")]
+        [Button.inline("👨‍💻 المبرمج", b"developer")]
     ]
 
     if is_user_admin(user_id):
@@ -249,12 +225,10 @@ async def start_handler(event):
     is_subscribed, message = await check_subscription(user_id)
     if not is_subscribed:
         keyboard = [
-            [Button.url("📢 الاشتراك في القناة", f"https://t.me/{get_admin_settings()['required_channel']}")] if get_admin_settings()['required_channel'] else [],
-            [Button.url("👥 الانضمام إلى المجموعة", f"https://t.me/{get_admin_settings()['required_group']}")] if get_admin_settings()['required_group'] else [],
+            [Button.url("📢 الاشتراك في القناة", f"https://t.me/{get_admin_settings()['required_channel']}")],
+            [Button.url("👥 الانضمام إلى المجموعة", f"https://t.me/{get_admin_settings()['required_group']}")],
             [Button.inline("✅ تم الاشتراك", b"check_subscription")]
         ]
-        # Remove empty lists
-        keyboard = [btn for btn in keyboard if btn]
         await event.respond(message, buttons=keyboard)
         return
 
@@ -278,12 +252,10 @@ async def check_subscription_handler(event):
         )
     else:
         keyboard = [
-            [Button.url("📢 الاشتراك في القناة", f"https://t.me/{get_admin_settings()['required_channel']}")] if get_admin_settings()['required_channel'] else [],
-            [Button.url("👥 الانضمام إلى المجموعة", f"https://t.me/{get_admin_settings()['required_group']}")] if get_admin_settings()['required_group'] else [],
+            [Button.url("📢 الاشتراك في القناة", f"https://t.me/{get_admin_settings()['required_channel']}")],
+            [Button.url("👥 الانضمام إلى المجموعة", f"https://t.me/{get_admin_settings()['required_group']}")],
             [Button.inline("✅ تم الاشتراك", b"check_subscription")]
         ]
-        # Remove empty lists
-        keyboard = [btn for btn in keyboard if btn]
         await event.edit(message, buttons=keyboard)
 
 @bot.on(events.CallbackQuery)
@@ -296,12 +268,10 @@ async def callback_handler(event):
     is_subscribed, message = await check_subscription(user_id)
     if not is_subscribed:
         keyboard = [
-            [Button.url("📢 الاشتراك في القناة", f"https://t.me/{get_admin_settings()['required_channel']}")] if get_admin_settings()['required_channel'] else [],
-            [Button.url("👥 الانضمام إلى المجموعة", f"https://t.me/{get_admin_settings()['required_group']}")] if get_admin_settings()['required_group'] else [],
+            [Button.url("📢 الاشتراك في القناة", f"https://t.me/{get_admin_settings()['required_channel']}")],
+            [Button.url("👥 الانضمام إلى المجموعة", f"https://t.me/{get_admin_settings()['required_group']}")],
             [Button.inline("✅ تم الاشتراك", b"check_subscription")]
         ]
-        # Remove empty lists
-        keyboard = [btn for btn in keyboard if btn]
         await event.edit(message, buttons=keyboard)
         return
 
@@ -329,14 +299,16 @@ async def callback_handler(event):
         await join_action_handler(event, data)
     elif data == b"back_to_main":
         await start_handler(event)
+    elif data == b"add_session":
+        await add_session_handler(event)
 
 async def developer_handler(event):
     developer_keyboard = [
-        [Button.url("👨‍💻 تواصل مع المبرمج", "https://t.me/shmrye")],
+        [Button.url("👨‍💻 تواصل مع المبرمج", "https://t.me/Programmer_error")],
         [Button.inline("🔙 رجوع", b"back_to_main")]
     ]
     await event.edit(
-        "👨‍💻 **المبرمج**\n\n"
+        "👨‍💻 **المطور**\n\n"
         "البوت من برمجة @Programmer_error\n"
         "لأي استفسار أو اقتراح تواصل معي.",
         buttons=developer_keyboard
@@ -344,8 +316,7 @@ async def developer_handler(event):
 
 async def add_account_handler(event):
     keyboard = [
-        [Button.inline("📱 إضافة برقم هاتف", b"add_phone")],
-        [Button.inline("🔑 إضافة بسيشن", b"add_session")],
+        [Button.inline("🔑 إضافة بسيشن جاهز", b"add_session")],
         [Button.inline("🔙 رجوع", b"back_to_main")]
     ]
     await event.edit(
@@ -354,85 +325,19 @@ async def add_account_handler(event):
         buttons=keyboard
     )
 
-async def add_phone_handler(event):
-    await event.edit("📱 **إضافة برقم هاتف**\n\n"
-                    "يرجى إرسال رقم هاتفك بالصيغة الدولية (مثال: +966512345678)")
-
-    try:
-        phone_event = await bot.wait_for([events.NewMessage(from_users=event.sender_id)], timeout=300)
-        phone = phone_event.text.strip()
-
-        if not re.match(r'^\+\d{8,15}$', phone):
-            await event.respond("❌ رقم الهاتف غير صالح. يجب أن يكون بالصيغة الدولية.")
-            return
-
-        client = TelegramClient(
-            StringSession(),
-            API_ID,
-            API_HASH,
-            device_model="iPhone 17 Pro",
-            timeout=30
-        )
-        await client.connect()
-
-        if not await client.is_user_authorized():
-            await client.send_code_request(phone)
-            await event.edit("🔑 **إدخال رمز التحقق**\n\n"
-                           "تم إرسال رمز التحقق إلى رقم هاتفك. يرجى إرساله هنا.")
-
-            try:
-                code_event = await bot.wait_for([events.NewMessage(from_users=event.sender_id)], timeout=300)
-                code = code_event.text.strip()
-
-                try:
-                    await client.sign_in(phone, code)
-                except SessionPasswordNeededError:
-                    await event.edit("🔒 **إدخال كلمة مرور التحقق الثنائي**\n\n"
-                                   "يرجى إرسال كلمة مرور التحقق الثنائي.")
-
-                    try:
-                        password_event = await bot.wait_for([events.NewMessage(from_users=event.sender_id)], timeout=300)
-                        password = password_event.text.strip()
-                        await client.sign_in(password=password)
-                    except Exception as e:
-                        logger.error(f"Error signing in with password: {e}")
-                        await event.respond("❌ حدث خطأ أثناء إدخال كلمة المرور.")
-                        return
-
-                session = client.session.save()
-                await update_session(event.sender_id, session)
-                await event.edit("✅ تم إضافة الحساب بنجاح!")
-                await client.disconnect()
-                return
-
-            except PhoneCodeInvalidError:
-                await event.respond("❌ رمز التحقق غير صالح.")
-                return
-            except Exception as e:
-                logger.error(f"Error signing in: {e}")
-                await event.respond("❌ حدث خطأ أثناء تسجيل الدخول.")
-                return
-
-    except PhoneNumberInvalidError:
-        await event.respond("❌ رقم الهاتف غير صالح.")
-    except Exception as e:
-        logger.error(f"Error adding account by phone: {e}")
-        await event.respond("❌ حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.")
-
 async def add_session_handler(event):
     await event.edit("🔑 **إضافة بسيشن جاهز**\n\n"
                     "يرجى إرسال Session String الخاص بك.")
 
-    try:
-        session_event = await bot.wait_for([events.NewMessage(from_users=event.sender_id)], timeout=300)
-        session = session_event.text.strip()
+    session_event = await bot.wait_for([events.NewMessage(from_users=event.sender_id)], timeout=300)
+    session = session_event.text.strip()
 
+    try:
         client = TelegramClient(
             StringSession(session),
             API_ID,
             API_HASH,
-            device_model="iPhone 17 Pro",
-            timeout=30
+            device_model="iPhone 17 Pro"
         )
         await client.connect()
 
@@ -445,7 +350,7 @@ async def add_session_handler(event):
         await client.disconnect()
     except Exception as e:
         logger.error(f"Error adding account by session: {e}")
-        await event.respond("❌ حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.")
+        await event.respond("❌ حدث خطأ أثناء إضافة الحساب.")
 
 async def smart_clean_handler(event):
     keyboard = [
@@ -744,13 +649,6 @@ async def join_action_handler(event, action):
                         joined += 1
                         update_user_stats(user_id, "joined_groups")
                         await asyncio.sleep(2)  # Avoid flood wait
-                except (InviteHashExpiredError, InviteHashInvalidError):
-                    logger.error(f"Invalid invite link: {link}")
-                except UserAlreadyParticipantError:
-                    logger.error(f"User already in group: {link}")
-                    joined += 1
-                except UserPrivacyRestrictedError:
-                    logger.error(f"User privacy restricted: {link}")
                 except Exception as e:
                     logger.error(f"Error joining group with link {link}: {e}")
 
@@ -806,7 +704,6 @@ async def account_info_handler(event):
 
     client = await get_user_client(user_id)
     session_info = "غير متاح"
-    phone = user['phone'] or "غير متاح"
 
     if client:
         try:
@@ -814,7 +711,6 @@ async def account_info_handler(event):
             session_info = f"📱 **معلومات الحساب**\n"
             session_info += f"الاسم: {me.first_name}\n"
             session_info += f"اسم المستخدم: @{me.username}\n" if me.username else ""
-            session_info += f"رقم الهاتف: {phone}\n"
             session_info += f"ايدي الحساب: {me.id}\n"
             session_info += f"نوع الحساب: {'بوت' if me.bot else 'مستخدم'}\n"
         except Exception as e:
@@ -930,7 +826,6 @@ async def admin_search_user_handler(event):
     text = f"👤 **معلومات المستخدم**\n\n"
     text += f"ايدي: {user['user_id']}\n"
     text += f"اسم المستخدم: @{user['username']}\n" if user['username'] else ""
-    text += f"رقم الهاتف: {user['phone']}\n" if user['phone'] else ""
     text += f"تم الإنشاء في: {user['created_at']}\n"
     text += f"آخر نشاط: {user['last_active']}\n"
     text += f"الحالة: {'محظور' if user['is_banned'] else 'نشط'}\n"
@@ -1065,8 +960,8 @@ async def admin_subscription_settings_handler(event):
 
     await event.edit(
         f"⚙️ **إعدادات الاشتراك**\n\n"
-        f"القناة المطلوبة: @{settings['required_channel'] or 'Programmer_error1'}\n"
-        f"المجموعة المطلوبة: @{settings['required_group'] or 'Programmer_error2'}\n\n"
+        f"القناة المطلوبة: @{settings['required_channel'] or 'غير محددة'}\n"
+        f"المجموعة المطلوبة: @{settings['required_group'] or 'غير محددة'}\n\n"
         "اختر الإعداد الذي تريد تعديله:",
         buttons=[
             [Button.inline("📢 تعيين القناة المطلوبة", b"set_required_channel")],
