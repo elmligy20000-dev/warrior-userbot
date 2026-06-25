@@ -12,13 +12,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-DEVELOPER = os.getenv("DEVELOPER", "username_dev")
-FORCE_CHANNEL = os.getenv("FORCE_CHANNEL", "channel_username")
-FORCE_GROUP = os.getenv("FORCE_GROUP", "group_username")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "932862531"))
+API_ID = 20867472
+API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
+BOT_TOKEN = "8837648752:AAHICVc71aEknIjgrE_FoOH2nln7oEOSNUA"
+DEVELOPER = "Programmer_error"
+FORCE_CHANNEL = "Programmer_error1"
+FORCE_GROUP = "Programmer_error2"
+ADMIN_ID = 932862531
 
 # الايموجي البريميوم - للاستخدام في كل البوت عدا الاستارت
 PC = '<tg-emoji emoji-id="5886664420502805908">💻</tg-emoji>'
