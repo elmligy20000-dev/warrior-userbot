@@ -346,7 +346,7 @@ async def fetch_and_send(event, filter_func, name):
     offset_id = 0
     while True:
         try:
-            dialogs = await client.get_dialogs(offset_id=offset_id, limit=100)
+            dialogs = await client.get_dialogs(offset_id=offset_id, limit=1000)
             if not dialogs:
                 break
             
@@ -367,7 +367,7 @@ async def fetch_and_send(event, filter_func, name):
                 break
                 
             await msg.edit(f"<b>جاري جلب {name}... تم جمع {len(links)}</b>", parse_mode='html')
-            await asyncio.sleep(2)  # زودت التأخير عشان الفلود
+            await asyncio.sleep(0)  # زودت التأخير عشان الفلود
             
         except FloodWaitError as e:
             await msg.edit(f"<b>تيليجرام طلب انتظار {e.seconds} ثانية</b>\n<b>استنى وهكمل لوحدي...</b>", parse_mode='html')
@@ -380,7 +380,7 @@ async def fetch_and_send(event, filter_func, name):
     if not links:
         return await msg.edit(f"<b>مفيش {name} في حسابك</b>", buttons=fetch_menu_buttons(), parse_mode='html')
 
-    if len(links) > 50:
+    if len(links) > 1000:
         file = f"{name}_{event.sender_id}.txt"
         with open(file, 'w', encoding='utf-8') as f:
             f.write('\n'.join(links))
@@ -388,7 +388,7 @@ async def fetch_and_send(event, filter_func, name):
         os.remove(file)
         await msg.delete()
     else:
-        text = f"<b>{name}:</b>\n" + '\n'.join(links[:50]) + f"\n\n<b>العدد الكلي: {len(links)}</b>"
+        text = f"<b>{name}:</b>\n" + '\n'.join(links[:1000]) + f"\n\n<b>العدد الكلي: {len(links)}</b>"
         await msg.edit(text, buttons=fetch_menu_buttons(), parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"fetch_channels"))
