@@ -141,8 +141,6 @@ def init_db():
         )
     """)
 
-    conn.commit()
-    conn.close()
     # Insert default settings
     cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ('min_deposit', '1'))
     cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ('crypto_bot_token', ''))
