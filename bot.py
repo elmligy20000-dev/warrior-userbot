@@ -169,22 +169,43 @@ async def check_account(event):
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
     uid = event.sender_id
+    
+    # تحقق الحظر الاول
     if uid in banned_users:
         return await event.respond(f"{STAR}{LOCK} انت محظور من البوت{STAR}")
 
+    # اشعار دخول للادمن
     if uid!= ADMIN_ID:
         try:
             user = await event.get_sender()
             await bot.send_message(ADMIN_ID, f"{STAR}{DOVE} دخول جديد{STAR}\n{STAR}الاسم: {user.first_name}\nالايدي: {uid}\nاليوزر: @{user.username or 'لا يوجد'}{STAR}")
         except: pass
 
+    # تحقق الاشتراك
     if not await check_subscription(uid):
-        return await event.respond(f"{STAR}{PLANET} <b>مرحباً</b> {PLANET}{STAR}\n{STAR}اشترك الأول{STAR}", buttons=force_sub_buttons(), parse_mode='html')
+        return await event.respond(
+            f"{STAR}{PLANET} <b>مرحباً بك في بوت التنظيف الاحترافي</b> {PLANET}{STAR}\n\n"
+            f"{STAR}اشترك في القناة والجروب لفتح البوت{STAR}",
+            buttons=force_sub_buttons(),
+            parse_mode='html'
+        )
 
-    user = await event.get_sender()
-    text = f"{STAR}{ROCKET} <b>أهلاً {user.first_name}</b> {ROCKET}{STAR}\n{STAR}اختار العملية{STAR}"
-    await event.respond(text, buttons=main_menu(uid), parse_mode='html')
+    try:
+        user = await event.get_sender()
+        name_user = user.first_name if user.first_name else "مستخدم"
 
+        welcome_text = (
+            f"{STAR}{ROCKET} <b>أهلاً {name_user}</b> {ROCKET}{STAR}\n\n"
+            f"{STAR}{PLANET} بوت تنظيف الحسابات الاحترافي{STAR}\n\n"
+            f"{STAR}{BOLT} سريع وآمن 100%{STAR}\n\n"
+            f"{STAR}{SIGNAL} ابدأ باضافة حسابك{STAR}"
+        )
+
+        await event.respond(welcome_text, buttons=main_menu(), parse_mode='html')
+    except Exception as e:
+        # لو حصل اي خطأ ابعت رسالة بسيطة عشان البوت ميقعش
+        await event.respond(f"{STAR}البوت جاهز{STAR}", buttons=main_menu())
+        
 @bot.on(events.CallbackQuery(data=b"check_sub"))
 async def check_sub(event):
     if await check_subscription(event.sender_id):
