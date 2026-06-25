@@ -88,7 +88,6 @@ def main_menu(user_id):
         [Button.inline("جلب الروابط", b"fetch_menu")],
         [Button.inline("انضمام تلقائي", b"join_menu")],
         [Button.inline("معلومات حسابي", b"my_info")],
-        [Button.inline("المميزات", b"features")],
         [Button.url("المبرمج", f"https://t.me/{DEVELOPER}")]
     ]
     if user_id == ADMIN_ID:
@@ -344,23 +343,39 @@ async def fetch_and_send(event, filter_func, name):
     msg = await event.edit(f"<b>جاري جلب {name}... انتظر</b>", parse_mode='html')
     links = []
     
-    # التعديل هنا: نجيب كل الديالوجز بالكامل
     offset_id = 0
     while True:
-        dialogs = await client.get_dialogs(offset_id=offset_id, limit=100)
-        if not dialogs:
+        try:
+            dialogs = await client.get_dialogs(offset_id=offset_id, limit=100)
+            if not dialogs:
+                break
+            
+            for dialog in dialogs:
+                try:
+                    if filter_func(dialog):
+                        # معالجة الخطأ لو مفيش username
+                        username = getattr(dialog.entity, 'username', None)
+                        if username:
+                            links.append(f"https://t.me/{username}")
+                        else:
+                            links.append(f"{dialog.name} - ID: {dialog.id}")
+                except Exception:
+                    continue  # لو جروب بايظ كمل عادي
+            
+            offset_id = dialogs[-1].id
+            if offset_id == 0:  # لو وصلنا للاخر
+                break
+                
+            await msg.edit(f"<b>جاري جلب {name}... تم جمع {len(links)}</b>", parse_mode='html')
+            await asyncio.sleep(2)  # زودت التأخير عشان الفلود
+            
+        except FloodWaitError as e:
+            await msg.edit(f"<b>تيليجرام طلب انتظار {e.seconds} ثانية</b>\n<b>استنى وهكمل لوحدي...</b>", parse_mode='html')
+            await asyncio.sleep(e.seconds)
+            continue
+        except Exception as e:
+            await msg.edit(f"<b>خطأ: {str(e)}</b>\n<b>تم جلب {len(links)} {name} حتى الان</b>", parse_mode='html')
             break
-        
-        for dialog in dialogs:
-            if filter_func(dialog):
-                if dialog.entity.username:
-                    links.append(f"https://t.me/{dialog.entity.username}")
-                else:
-                    links.append(f"{dialog.name} - ID: {dialog.id}")
-        
-        offset_id = dialogs[-1].id
-        await msg.edit(f"<b>جاري جلب {name}... تم جمع {len(links)}</b>", parse_mode='html')
-        await asyncio.sleep(1)  # عشان ميحصلش فلود
 
     if not links:
         return await msg.edit(f"<b>مفيش {name} في حسابك</b>", buttons=fetch_menu_buttons(), parse_mode='html')
@@ -374,7 +389,7 @@ async def fetch_and_send(event, filter_func, name):
         await msg.delete()
     else:
         text = f"<b>{name}:</b>\n" + '\n'.join(links[:50]) + f"\n\n<b>العدد الكلي: {len(links)}</b>"
-        await msg.edit(text, parse_mode='html')
+        await msg.edit(text, buttons=fetch_menu_buttons(), parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"fetch_channels"))
 async def fetch_channels(event):
