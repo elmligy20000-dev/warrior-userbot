@@ -94,31 +94,33 @@ def init_db():
         )
     ''')
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS transactions (
-            transaction_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            amount INTEGER,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            type TEXT,
-            status TEXT DEFAULT 'completed',
-            description TEXT,
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
-        )
-    ''')
-    cursor.execute('''
         CREATE TABLE IF NOT EXISTS payments (
             payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
             amount INTEGER,
             crypto_amount REAL,
             currency TEXT,
-            payment_id TEXT UNIQUE,
+            invoice_id TEXT UNIQUE,
             status TEXT DEFAULT 'pending',
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             invoice_url TEXT,
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     ''')
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS payments (
+        payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        amount INTEGER,
+        crypto_amount REAL,
+        currency TEXT,
+        invoice_id TEXT UNIQUE,
+        status TEXT DEFAULT 'pending',
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        invoice_url TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(user_id)
+    )
+''')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS channels (
             channel_id INTEGER PRIMARY KEY,
