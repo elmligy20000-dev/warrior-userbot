@@ -1,26 +1,26 @@
 import telebot
 import requests
 import json
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
+import os
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 TOKEN = "8837648752:AAHICVc71aEknIjgrE_FoOH2nln7oEOSNUA"
 ADMIN_ID = 932862531 
-
-API_KEYS = [
-    "sk-fa39f1423fe44b488da7cd04fa30f04f",
-    "sk-67f0479e08694544ac766dc7eb999cf1"
-]
+# المفاتيح هتخزن هنا، فاضية في الاول
+API_KEYS = []
 current_key_index = 0
 chat_history = {}
-waiting_for_key = {} # عشان نعرف الادمن بيكتب مفتاح ولا لا
+waiting_for_key = {}
+
+bot = telebot.TeleBot(TOKEN)
 
 def get_api_key():
     global current_key_index
+    if not API_KEYS:
+        return None
     key = API_KEYS[current_key_index]
     current_key_index = (current_key_index + 1) % len(API_KEYS)
     return key
-
-bot = telebot.TeleBot(TOKEN)
 
 def main_menu(user_id):
     markup = InlineKeyboardMarkup(row_width=2)
@@ -34,7 +34,7 @@ def admin_panel_menu():
     markup.add(
         InlineKeyboardButton("📊 حالة البوت", callback_data="bot_status"),
         InlineKeyboardButton("🔑 ادارة المفاتيح", callback_data="keys_menu"),
-        InlineKeyboardButton("👥 عدد المستخدمين", callback_data="users_count"),
+        InlineKeyboardButton("👥 المستخدمين", callback_data="users_count"),
         InlineKeyboardButton("🔙 رجوع", callback_data="back_main")
     )
     return markup
@@ -49,46 +49,50 @@ def keys_menu():
     )
     return markup
 
-def ask_deepseek(user_id, prompt):
+# ===== Gemini API =====
+def ask_gemini(user_id, prompt):
     if user_id not in chat_history:
         chat_history[user_id] = []
-    chat_history[user_id].append({"role": "user", "content": prompt})
-    messages = chat_history[user_id][-10:]
+    chat_history[user_id].append({"role": "user", "parts": [{"text": prompt}]})
+    contents = chat_history[user_id][-10:]
 
-    url = "https://api.deepseek.com/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {get_api_key()}", "Content-Type": "application/json"}
-    data = {"model": "deepseek-chat", "messages": messages, "max_tokens": 1200, "temperature": 0.7}
+    api_key = get_api_key()
+    if not api_key:
+        return "❌ مفيش مفاتيح ! الادمن لازم يضيف مفتاح من لوحة المبرمج"
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    data = {"contents": contents, "generationConfig": {"maxOutputTokens": 1200}}
 
     try:
         res = requests.post(url, headers=headers, json=data, timeout=30)
         if res.status_code == 200:
-            reply = res.json()['choices'][0]['message']['content']
-            chat_history[user_id].append({"role": "assistant", "content": reply})
+            reply = res.json()['candidates'][0]['content']['parts'][0]['text']
+            chat_history[user_id].append({"role": "model", "parts": [{"text": reply}]})
             return reply
         else:
-            return f"❌ خطأ API: {res.status_code}"
+            return f"❌ خطأ API: {res.status_code}\n{res.json().get('error',{}).get('message','')}"
     except Exception as e:
         return f"❌ خطأ اتصال: {e}"
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(message.chat.id, "🤖 اهلاً بيك في بوت Error ذكاء اصطناعي متطور\nابعت سؤالك او استخدم الازرار:", reply_markup=main_menu(message.from_user.id))
+    bot.send_message(message.chat.id, "🤖 اهلاً بيك في بوت Error الذكاء الاصطناعي المتطور\nابعت سؤالك او استخدم الازرار:", reply_markup=main_menu(message.from_user.id))
 
 @bot.message_handler(func=lambda m: True)
 def handle_message(message):
     user_id = message.from_user.id
 
-    # لو الادمن بيضيف مفتاح
     if user_id in waiting_for_key and waiting_for_key[user_id]:
         new_key = message.text.strip()
-        if new_key.startswith("sk-"):
+        if new_key.startswith("AIza"):
             if new_key not in API_KEYS:
                 API_KEYS.append(new_key)
-                bot.send_message(user_id, f"✅ تم اضافة المفتاح بنجاح\nالاجمالي: {len(API_KEYS)} مفاتيح", reply_markup=keys_menu())
+                bot.send_message(user_id, f"✅ تم اضافة مفتاح Gemini\nالاجمالي: {len(API_KEYS)} مفاتيح", reply_markup=keys_menu())
             else:
                 bot.send_message(user_id, "⚠️ المفتاح موجود اصلا", reply_markup=keys_menu())
         else:
-            bot.send_message(user_id, "❌ المفتاح لازم يبدأ بـ sk-", reply_markup=keys_menu())
+            bot.send_message(user_id, "❌ مفتاح Gemini لازم يبدأ بـ AIza", reply_markup=keys_menu())
         waiting_for_key[user_id] = False
         return
 
@@ -96,7 +100,7 @@ def handle_message(message):
         return
 
     bot.send_chat_action(message.chat.id, 'typing')
-    reply = ask_deepseek(user_id, message.text)
+    reply = ask_gemini(user_id, message.text)
     bot.reply_to(message, reply, reply_markup=main_menu(user_id))
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -108,36 +112,39 @@ def callback_handler(call):
         bot.edit_message_text("القائمة الرئيسية:", user_id, msg_id, reply_markup=main_menu(user_id))
 
     elif call.data == "admin_panel" and user_id == ADMIN_ID:
-        bot.edit_message_text("⚙️ لوحة المبرمج المتطورة:", user_id, msg_id, reply_markup=admin_panel_menu())
+        bot.edit_message_text("⚙️ لوحة المبرمج Gemini:", user_id, msg_id, reply_markup=admin_panel_menu())
 
     elif call.data == "keys_menu" and user_id == ADMIN_ID:
         bot.edit_message_text("🔑 ادارة المفاتيح:", user_id, msg_id, reply_markup=keys_menu())
 
     elif call.data == "bot_status" and user_id == ADMIN_ID:
-        status = f"""📊 **حالة البوت المتطور**
+        key_status = "مفيش مفاتيح" if not API_KEYS else f"{len(API_KEYS)} مفتاح شغال"
+        status = f"""📊 **حالة البوت Gemini**
 
-🔑 المفاتيح: {len(API_KEYS)} شغال
+🔑 المفاتيح: {key_status}
 👥 المستخدمين: {len(chat_history)}
-🔄 المفتاح الحالي: {API_KEYS[current_key_index][:15]}...
-💾 الذاكرة: {sum(len(v) for v in chat_history.values())} رسالة
+💾 الرسائل المخزنة: {sum(len(v) for v in chat_history.values())}
 🟢 الحالة: اونلاين"""
         bot.edit_message_text(status, user_id, msg_id, parse_mode="Markdown", reply_markup=admin_panel_menu())
 
     elif call.data == "users_count" and user_id == ADMIN_ID:
-        bot.edit_message_text(f"👥 عدد المستخدمين النشطين: {len(chat_history)}", user_id, msg_id, reply_markup=admin_panel_menu())
+        bot.edit_message_text(f"👥 عدد المستخدمين: {len(chat_history)}", user_id, msg_id, reply_markup=admin_panel_menu())
 
     elif call.data == "show_keys" and user_id == ADMIN_ID:
         if not API_KEYS:
-            text = "مفيش مفاتيح!"
+            text = "مفيش مفاتيح مضافة!\nاضغط ➕ اضافة مفتاح"
         else:
-            text = "📋 **المفاتيح الحالية:**\n" + "\n".join([f"{i+1}. `{k[:20]}...`" for i,k in enumerate(API_KEYS)])
+            text = "📋 **مفاتيح Gemini:**\n" + "\n".join([f"{i+1}. `{k[:20]}...`" for i,k in enumerate(API_KEYS)])
         bot.edit_message_text(text, user_id, msg_id, parse_mode="Markdown", reply_markup=keys_menu())
 
     elif call.data == "add_key_btn" and user_id == ADMIN_ID:
         waiting_for_key[user_id] = True
-        bot.edit_message_text("➕ ابعت المفتاح الجديد دلوقتي:\nلازم يبدأ بـ sk-", user_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ الغاء", callback_data="keys_menu")))
+        bot.edit_message_text("➕ ابعت مفتاح Gemini دلوقتي:\nلازم يبدأ بـ AIza\nتجيبه من: https://aistudio.google.com/app/apikey", user_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ الغاء", callback_data="keys_menu")))
 
     elif call.data == "del_key_btn" and user_id == ADMIN_ID:
+        if not API_KEYS:
+            bot.answer_callback_query(call.id, "مفيش مفاتيح للحذف")
+            return
         markup = InlineKeyboardMarkup(row_width=3)
         buttons = [InlineKeyboardButton(f"{i+1}", callback_data=f"del_{i}") for i in range(len(API_KEYS))]
         markup.add(*buttons)
@@ -155,7 +162,7 @@ def callback_handler(call):
         if user_id in chat_history:
             chat_history[user_id] = []
         bot.answer_callback_query(call.id, "✅ تم مسح الذاكرة")
-        bot.send_message(user_id, "تم مسح المحادثة بنجاح 👌", reply_markup=main_menu(user_id))
+        bot.send_message(user_id, "تم مسح المحادثة 👌", reply_markup=main_menu(user_id))
 
-print("البوت المتطور شغال 24/7...")
+print("بوت Gemini شغال...")
 bot.infinity_polling()
