@@ -1,303 +1,207 @@
-import os
+
 import asyncio
+import io
 from telethon import TelegramClient, events, Button
-from telethon.sessions import StringSession
-from telethon.tl.functions.channels import LeaveChannelRequest, GetParticipantRequest
-from telethon.tl.functions.messages import DeleteHistoryRequest
-from telethon.tl.types import Channel, Chat, User, ChannelParticipantCreator, ChannelParticipantAdmin
-from telethon.errors import UserNotParticipantError
-from dotenv import load_dotenv
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-load_dotenv()
-
-API_ID = 20867472
+# --- الإعدادات الأساسية (ضع بياناتك هنا) ---
+API_ID = 20867472 
 API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
 BOT_TOKEN = "8837648752:AAHICVc71aEknIjgrE_FoOH2nln7oEOSNUA"
-DEVELOPER = "Programmer_error"
-FORCE_CHANNEL = "Programmer_error1"
+ADMIN_ID = 932862531 
+SESSION_NAME = 'Iphone 17 Pro' # اسم ملف الجلسة (يجب أن يكون موجوداً في نفس المجلد)
 
-bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
-user_sessions = {}
+# --- الرموز التعبيرية (للتجميل) ---
+E = {
+    'bolt': '⚡', 'dice': '🎲', 'spark': '✨', 
+    'white': '⚪', 'dim': '🔹', 'error': '❌',
+    'success': '✅', 'back': '🔙', 'menu': '🛠'
+}
 
-# ===== التحقق من الاشتراك =====
-async def check_subscription(user_id):
+# --- تشغيل العملاء (Client Initialization) ---
+# عميل Telethon (للتحكم بالحساب الشخصي)
+user_client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
+# عميل Pyrogram (لإدارة البوت)
+bot = Client("my_bot", bot_token=BOT_TOKEN)
+
+# --- دالة الجلب (Extraction Engine) ---
+async def extract_chats(mode):
+    """دالة تجلب البيانات وتصنفها حسب الطلب"""
+    extracted_data = []
     try:
-        await bot(GetParticipantRequest(FORCE_CHANNEL, user_id))
-        return True
-    except UserNotParticipantError:
-        return False
-    except:
-        return True
+        async for dialog in user_client.iter_dialogs():
+            # 1. جلب الخاص (المستخدمين)
+            if mode == "pvt" and dialog.is_user:
+                extracted_data.append(f"👤 User: {dialog.name} | ID: {dialog.id}")
 
-def force_sub_buttons():
-    return [[Button.url("📢 اشترك في قناة السورس", f"https://t.me/{FORCE_CHANNEL}")],
-            [Button.inline("✅ تحققت من الاشتراك", b"check_sub")]]
+            # 2. جلب البوتات
+            elif mode == "bot" and dialog.is_user:
+                # ملاحظة: التحقق من كونه بوت يتطلب طلب معلومات الشات
+                try:
+                    entity = await user_client.get_entity(dialog.id)
+                    if getattr(entity, 'bot', False):
+                        extracted_data.append(f"🤖 Bot: {dialog.name} | ID: {dialog.id}")
+                except: continue
 
-# ===== الأزرار =====
-def main_menu():
-    return [
-        [Button.inline("إضافة حساب", b"add_account")],
-        [Button.inline("قائمة التنظيف", b"clean_menu")],
-        [Button.inline("المميزات", b"features")],
-        [Button.url("👨‍💻 المبرمج", f"https://t.me/{DEVELOPER}")]
-    ]
+            # 3. جلب الجروبات (استثناء الأدمن)
+            elif mode == "grp" and dialog.is_group:
+                perms = await user_client.get_permissions(dialog.id, 'me')
+                if not perms.is_admin and not perms.is_creator:
+                    extracted_data.append(f"👥 Group: {dialog.name} | ID: {dialog.id}")
 
-def clean_menu_buttons():
-    return [
-        [Button.inline("📢 تنظيف القنوات", b"clean_channels")],
-        [Button.inline("👥 تنظيف الجروبات", b"clean_groups")],
-        [Button.inline("💬 تنظيف الخاص", b"clean_private")],
-        [Button.inline("🤖 تنظيف البوتات", b"clean_bots")],
-        [Button.inline("💣 تنظيف الكل", b"clean_all")],
-        [Button.inline("🗑️ حذف الحساب", b"del_account")],
-        [Button.inline("🔙 رجوع", b"back")]
-    ]
+            # 4. جلب القنوات (استثناء الأدمن)
+            elif mode == "chn" and dialog.is_channel:
+                perms = await user_client.get_permissions(dialog.id, 'me')
+                if not perms.is_admin and not perms.is_creator:
+                    extracted_data.append(f"📺 Channel: {dialog.name} | ID: {dialog.id}")
 
-async def check_account(event):
-    uid = event.sender_id
-    if not await check_subscription(uid):
-        await event.edit(
-            "<b>⚠️ اشتراك إجباري</b>\n\n"
-            f"لازم تشترك في @{FORCE_CHANNEL} الأول عشان تستخدم البوت",
-            buttons=force_sub_buttons(),
-            parse_mode='html'
-        )
-        return None
-    if uid not in user_sessions:
-        await event.answer("ضيف حسابك الأول", alert=True)
-        return None
-    return user_sessions[uid]["client"]
+            # 5. جلب الكل
+            elif mode == "all":
+                if dialog.is_user:
+                    extracted_data.append(f"👤 User/Bot: {dialog.name} | ID: {dialog.id}")
+                elif dialog.is_group or dialog.is_channel:
+                    perms = await user_client.get_permissions(dialog.id, 'me')
+                    if not perms.is_admin and not perms.is_creator:
+                        type_icon = "👥" if dialog.is_group else "📺"
+                        extracted_data.append(f"{type_icon} Chat: {dialog.name} | ID: {dialog.id}")
 
-# ===== أوامر البوت =====
-@bot.on(events.NewMessage(pattern='/start'))
-async def start(event):
-    if not await check_subscription(event.sender_id):
-        return await event.respond(
-            "<b>⚠️ اشتراك إجباري</b>\n\n"
-            f"لازم تشترك في @{FORCE_CHANNEL} الأول عشان تستخدم البوت",
-            buttons=force_sub_buttons(),
-            parse_mode='html'
-        )
+        if not extracted_data:
+            return None, "⚠️ لم يتم العثور على أي عناصر مطابقة."
 
-    user = await event.get_sender()
-    name_user = user.first_name
-
-    # الصيغة الصح اللي بتشتغل مع Telethon
-    welcome_text = (
-        f'<b><tg-emoji emoji-id="5798482080421649554">🔒</tg-emoji> اهلا بك ‹ {name_user} › في بوت تنظيف الحسابات <tg-emoji emoji-id="5796526727840669257">🎲</tg-emoji></b>\n\n'
-        f'<b><tg-emoji emoji-id="5796499583647359561">📌</tg-emoji> ضيف حسابك وابدأ التنظيف بضغطة زر <tg-emoji emoji-id="5798941981224737816">🚀</tg-emoji></b>\n\n'
-        f'<b><tg-emoji emoji-id="5798482080421649554">🔒</tg-emoji> كل العمليات فيها تأخير تلقائي عشان أمان حسابك <tg-emoji emoji-id="5798941981224737816">🚀</tg-emoji></b>'
-    )
-
-    await event.respond(welcome_text, buttons=main_menu(), parse_mode='html')
-
-@bot.on(events.CallbackQuery(data=b"check_sub"))
-async def check_sub(event):
-    if await check_subscription(event.sender_id):
-        await event.edit("<b>✅ تم التحقق من الاشتراك</b>\n\nتقدر تستخدم البوت دلوقتي", buttons=main_menu(), parse_mode='html')
-    else:
-        await event.answer("❌ لسه مشتركتش في القناة", alert=True)
-
-@bot.on(events.CallbackQuery(data=b"features"))
-async def features(event):
-    if not await check_subscription(event.sender_id):
-        return await event.edit(
-            "<b>⚠️ اشتراك إجباري</b>\n\n"
-            f"لازم تشترك في @{FORCE_CHANNEL} الأول",
-            buttons=force_sub_buttons(),
-            parse_mode='html'
-        )
-    
-    features_text = (
-        "<b>مميزات البوت:</b>\n\n"
-        "<b>أمان كامل:</b> تأخير تلقائي بين العمليات\n"
-        "<b>سرعة عالية:</b> تنظيف مئات المحادثات بدقايق\n"
-        "<b>ذكي:</b> بيتخطى الجروبات اللي انت أدمن فيها\n"
-        "<b>شامل:</b> قنوات + جروبات + خاص + بوتات\n"
-        "<b>حذف من الطرفين:</b> للرسايل الجديدة في الخاص\n"
-        "<b>واجهة سهلة:</b> كل حاجة بضغطة زر\n\n"
-    )
-    await event.edit(features_text, buttons=[[Button.inline("🔙 رجوع", b"back")]], parse_mode='html')
-
-@bot.on(events.CallbackQuery(data=b"add_account"))
-async def add_account(event):
-    if not await check_subscription(event.sender_id):
-        return await event.edit(
-            "<b>⚠️ اشتراك إجباري</b>\n\n"
-            f"لازم تشترك في @{FORCE_CHANNEL} الأول",
-            buttons=force_sub_buttons(),
-            parse_mode='html'
-        )
-
-    async with bot.conversation(event.sender_id, timeout=300) as conv:
-        await conv.send_message("ابعت رقم الحساب مع كود الدولة: `+2010xxxxxxx`\n\nلإلغاء العملية ابعت /cancel")
-        phone_msg = await conv.get_response()
-        if phone_msg.text == '/cancel':
-            return await conv.send_message("تم الإلغاء", buttons=main_menu())
-
-        phone = phone_msg.text
-        await conv.send_message("تمام. دلوقتي ابعت كود التفعيل اللي وصلك كذا 5 6 6 6 بمسافات:")
-
-        client = TelegramClient(StringSession(), API_ID, API_HASH)
-        # اسم الجلسة لازم يتحط هنا قبل connect
-        client._init_request.app_version = "iPhone 17 Pro"
-        client._init_request.device_model = "iPhone 17 Pro"
-        client._init_request.system_version = "iOS 18.0"
+        content = "\n".join(extracted_data)
         
-        await client.connect()
-        try:
-            await client.send_code_request(phone)
-        except Exception as e:
-            return await conv.send_message(f"خطأ: {e}\nاتأكد من الرقم", buttons=main_menu())
+        # إذا كان العدد كبير، نرسله كملف
+        if len(extracted_data) > 50:
+            file_buffer = io.BytesIO(content.encode('utf-8'))
+            file_buffer.name = f"extracted_chats_{mode}.txt"
+            return file_buffer, f"✅ تم جلب {len(extracted_data)} عنصر. (تم إنشاء ملف)"
+        else:
+            return content, f"✅ تم جلب {len(extracted_data)} عنصر."
 
-        code = (await conv.get_response()).text
-        try:
-            await client.sign_in(phone, code)
-        except:
-            await conv.send_message("فيه تحقق بخطوتين؟ ابعت الباسورد:")
-            password = (await conv.get_response()).text
-            await client.sign_in(password=password)
+    except Exception as e:
+        return None, f"{E['error']} خطأ: {str(e)}"
 
-        me = await client.get_me()
-
-        user_sessions[event.sender_id] = {
-            "client": client,
-            "phone": phone,
-            "user_id": me.id
-        }
-        await conv.send_message(
-            f"✅ تم إضافة الحساب بنجاح\nالرقم: `{phone}`",
-            buttons=clean_menu_buttons()
-        )
-
-@bot.on(events.CallbackQuery(data=b"clean_menu"))
-async def clean_menu(event):
-    client = await check_account(event)
-    if not client: return
-    await event.edit("<b>اختر عملية التنظيف:</b>", buttons=clean_menu_buttons(), parse_mode='html')
-
-# ===== دوال التنظيف - نفس الكود اللي فات =====
-@bot.on(events.CallbackQuery(data=b"clean_channels"))
-async def clean_channels(event):
-    client = await check_account(event)
-    if not client: return
-
-    msg = await event.edit("<b>جاري فحص القنوات...</b>", parse_mode='html')
-    count_left, count_skipped = 0, 0
-
-    async for dialog in client.iter_dialogs():
-        if dialog.is_channel and not dialog.is_group:
-            if dialog.entity.username and dialog.entity.username.lower() == FORCE_CHANNEL.lower():
-                continue
-            try:
-                participant = await client(GetParticipantRequest(dialog.id, 'me'))
-                if isinstance(participant.participant, (ChannelParticipantCreator, ChannelParticipantAdmin)):
-                    count_skipped += 1
-                    continue
-                await client(LeaveChannelRequest(dialog.id))
-                count_left += 1
-                await msg.edit(f"<b>تنظيف القنوات</b>\nخرجت من: {count_left}\nتخطيت: {count_skipped}", parse_mode='html')
-                await asyncio.sleep(2)
-            except: pass
-
-    await msg.edit(f"<b>✅ خلصنا تنظيف القنوات</b>\nخرجت من: {count_left}\nسبت: {count_skipped} كأدمن/مالك", buttons=clean_menu_buttons(), parse_mode='html')
-
-@bot.on(events.CallbackQuery(data=b"clean_groups"))
-async def clean_groups(event):
-    client = await check_account(event)
-    if not client: return
-
-    msg = await event.edit("<b>جاري فحص الجروبات...</b>", parse_mode='html')
-    count_left, count_skipped = 0, 0
-
-    async for dialog in client.iter_dialogs():
-        if dialog.is_group:
-            try:
-                participant = await client(GetParticipantRequest(dialog.id, 'me'))
-                if isinstance(participant.participant, (ChannelParticipantCreator, ChannelParticipantAdmin)):
-                    count_skipped += 1
-                    continue
-                await client(LeaveChannelRequest(dialog.id))
-                count_left += 1
-                await msg.edit(f"<b>تنظيف الجروبات</b>\nخرجت من: {count_left}\nتخطيت: {count_skipped}", parse_mode='html')
-                await asyncio.sleep(2)
-            except: pass
-
-    await msg.edit(f"<b>✅ خلصنا تنظيف الجروبات</b>\nخرجت من: {count_left}\nسبت: {count_skipped} كأدمن/مالك", buttons=clean_menu_buttons(), parse_mode='html')
-
-@bot.on(events.CallbackQuery(data=b"clean_private"))
-async def clean_private(event):
-    client = await check_account(event)
-    if not client: return
-
-    msg = await event.edit("<b>جاري حذف المحادثات الخاصة...</b>\nتحذير: الحذف من الطرفين شغال للرسايل الجديدة بس", parse_mode='html')
+# --- دالة الحذف (Cleaning Engine) ---
+async def clean_chats(mode):
+    """دالة الحذف المباشر"""
     count = 0
+    try:
+        async for dialog in user_client.iter_dialogs():
+            should_delete = False
+            
+            if mode == "pvt" and dialog.is_user: should_delete = True
+            elif mode == "grp" and dialog.is_group:
+                perms = await user_client.get_permissions(dialog.id, 'me')
+                if not perms.is_admin and not perms.is_creator: should_delete = True
+            elif mode == "chn" and dialog.is_channel:
+                perms = await user_client.get_permissions(dialog.id, 'me')
+                if not perms.is_admin and not perms.is_creator: should_delete = True
+            elif mode == "bot" and dialog.is_user:
+                entity = await user_client.get_entity(dialog.id)
+                if getattr(entity, 'bot', False): should_delete = True
+            elif mode == "all":
+                if dialog.is_user or dialog.is_group or dialog.is_channel:
+                    perms = await user_client.get_permissions(dialog.id, 'me')
+                    if not perms.is_admin and not perms.is_creator: should_delete = True
 
-    async for dialog in client.iter_dialogs():
-        if dialog.is_user and not dialog.entity.bot:
-            try:
-                await client(DeleteHistoryRequest(peer=dialog.id, max_id=0, just_clear=False, revoke=True))
+            if should_delete:
+                await user_client.delete_dialog(dialog.id)
                 count += 1
-                await msg.edit(f"<b>تنظيف الخاص</b>\nتم حذف: {count} محادثة", parse_mode='html')
-                await asyncio.sleep(1)
-            except: pass
+                await asyncio.sleep(0.5) # لتجنب الحظر
 
-    await msg.edit(f"<b>✅ خلصنا تنظيف الخاص</b>\nتم حذف: {count} محادثة", buttons=clean_menu_buttons(), parse_mode='html')
+        return count
+    except Exception as e:
+        raise e
 
-@bot.on(events.CallbackQuery(data=b"clean_bots"))
-async def clean_bots(event):
-    client = await check_account(event)
-    if not client: return
+# --- أوامر البوت (Bot Handlers) ---
 
-    msg = await event.edit("<b>جاري حذف البوتات...</b>", parse_mode='html')
-    count = 0
+@bot.on_message(filters.command("start") & filters.user(ADMIN_ID))
+async def start(client, message):
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"{E['menu']} لوحة التحكم", callback_data="main_menu")]
+    ])
+    await message.reply(f"👋 أهلاً بك يا مطور.\nاستخدم الزر أدناه للتحكم بالحساب.", reply_markup=keyboard)
 
-    async for dialog in client.iter_dialogs():
-        if dialog.is_user and dialog.entity.bot:
-            try:
-                await client(DeleteHistoryRequest(peer=dialog.id, max_id=0, just_clear=False, revoke=True))
-                count += 1
-                await msg.edit(f"<b>تنظيف البوتات</b>\nتم حذف: {count} بوت", parse_mode='html')
-                await asyncio.sleep(1)
-            except: pass
+@bot.on_callback_query(filters.regex("main_menu"))
+async def main_menu(client, query):
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"🔍 جلب (بدون حذف)", callback_data="fetch_menu")],
+        [InlineKeyboardButton(f"🧹 حذف (مباشر)", callback_data="clean_menu_direct")],
+        [InlineKeyboardButton(f"{E['back']} رجوع", callback_data="back_to_start")]
+    ])
+    await query.edit_message_text(f"{E['bolt']} اختر العملية المطلوبة:", reply_markup=keyboard)
 
-    await msg.edit(f"<b>✅ خلصنا تنظيف البوتات</b>\nتم حذف: {count} بوت", buttons=clean_menu_buttons(), parse_mode='html')
+# --- قائمة خيارات الجلب ---
+@bot.on_callback_query(filters.regex("fetch_menu"))
+async def fetch_menu(client, query):
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💬 الخاص", callback_data="fetch_pvt"), InlineKeyboardButton("🤖 البوتات", callback_data="fetch_bot")],
+        [InlineKeyboardButton("👥 الجروبات", callback_data="fetch_grp"), InlineKeyboardButton("📺 القنوات", callback_data="fetch_chn")],
+        [InlineKeyboardButton("🧹 الكل", callback_data="fetch_all")],
+        [InlineKeyboardButton(f"{E['back']} رجوع", callback_data="main_menu")]
+    ])
+    await query.edit_message_text(f"{E['dice']} ماذا تريد أن تجلب؟", reply_markup=keyboard)
 
-@bot.on(events.CallbackQuery(data=b"clean_all"))
-async def clean_all(event):
-    client = await check_account(event)
-    if not client: return
+# --- قائمة خيارات الحذف ---
+@bot.on_callback_query(filters.regex("clean_menu_direct"))
+async def clean_menu_direct(client, query):
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💬 الخاص", callback_data=&quot;del_pvt"), InlineKeyboardButton("🤖 البوتات", callback_data="del_bot")],
+        [InlineKeyboardButton("👥 الجروبات", callback_data="del_grp"), InlineKeyboardButton("📺 القنوات", callback_data="del_chn")],
+        [InlineKeyboardButton("🧹 الكل", callback_data="del_all")],
+        [InlineKeyboardButton(f"{E['back']} رجوع", callback_data="main_menu")]
+    ])
+    await query.edit_message_text(f"{E['error']} ⚠️ تحذير: الحذف سيتم فوراً وبدون تراجع!", reply_markup=keyboard)
 
-    buttons = [
-        [Button.inline("✅ متأكد، نفذ", b"confirm_all")],
-        [Button.inline("❌ إلغاء", b"clean_menu")]
-    ]
-    await event.edit("<b>تحذير: تنظيف الكل هيحذف كل حاجة</b>\nالقنوات + الجروبات + الخاص + البوتات\n\nمتأكد؟", buttons=buttons, parse_mode='html')
+# --- معالجة عمليات الجلب (Execution) ---
+@bot.on_callback_query(filters.regex("^fetch_"))
+async def handle_fetch(client, query):
+    mode_map = {"fetch_pvt":"pvt", "fetch_grp":"grp", "fetch_chn":"chn", "fetch_bot":"bot", "fetch_all":"all"}
+    mode = mode_map.get(query.data)
+    
+    await query.answer("جاري المسح...", text_animation=True)
+    await query.edit_message_text(f"{E['bolt']} جاري الفحص... قد يستغرق ذلك دقائق إذا كان العدد كبيراً.")
 
-@bot.on(events.CallbackQuery(data=b"confirm_all"))
-async def confirm_all(event):
-    await event.edit("<b>بدء التنظيف الكامل...</b>", parse_mode='html')
-    await clean_channels(event)
-    await asyncio.sleep(1)
-    await clean_groups(event)
-    await asyncio.sleep(1)
-    await clean_private(event)
-    await asyncio.sleep(1)
-    await clean_bots(event)
-    await event.respond("<b>💣 تم الانتهاء من تنظيف الكل</b>", buttons=clean_menu_buttons(), parse_mode='html')
+    result, msg = await extract_chats(mode)
 
-@bot.on(events.CallbackQuery(data=b"del_account"))
-async def del_account(event):
-    if event.sender_id in user_sessions:
-        await user_sessions[event.sender_id]["client"].disconnect()
-        del user_sessions[event.sender_id]
-        await event.edit("✅ تم حذف الحساب من البوت", buttons=main_menu())
+    if result is None:
+        await query.message.reply(msg)
+    elif isinstance(result, bytes):
+        await query.message.reply_document(document=result, caption=msg)
     else:
-        await event.answer("مفيش حساب مضاف", alert=True)
+        await query.message.reply(f"{msg}\n\n`{result}`", parse_mode="Markdown")
+    
+    await query.message.reply(f"{E['back']} عد للقائمة الرئيسية:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("الرئيسية", callback_data="main_menu")]]))
 
-@bot.on(events.CallbackQuery(data=b"back"))
-async def back(event):
-    await event.edit("<b>القائمة الرئيسية:</b>", buttons=main_menu(), parse_mode='html')
+# --- معالجة عمليات الحذف (Execution) ---
+@bot.on_callback_query(filters.regex("^del_"))
+async def handle_delete(client, query):
+    mode_map = {"del_pvt":"pvt", "del_grp":"grp", "del_chn":"chn", "del_bot":"bot", "del_all":"all"}
+    mode = mode_map.get(query.data)
+    
+    await query.edit_message_text(f"{E['error']} جاري الحذف... يرجى عدم إغلاق البوت.")
+    
+    try:
+        count = await clean_chats(mode)
+        await query.message.reply(f"{E['success']} تم حذف {count} عنصر بنجاح.")
+    except Exception as e:
+        await query.message.reply(f"{E['error']} حدث خطأ: {str(e)}")
+    
+    await query.message.reply(f"{E['back']} القائمة:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("الرئيسية", callback_data="main_menu")]]))
 
-print("Bot is running...")
-bot.run_until_disconnected()
+@bot.on_callback_query(filters.regex("back_to_start"))
+async def back_to_start(client, query):
+    await query.edit_message_text("👋 أهلاً بك يا مطور.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(f"{E['menu']} لوحة التحكم", callback_data="main_menu")]]))
+
+# --- التشغيل الرئيسي ---
+async def main():
+    print("🚀 جاري تشغيل البوت والعميل...")
+    await user_client.start()
+    await bot.start()
+    print("✅ البوت يعمل الآن!")
+    await asyncio.Event().wait()
+
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
