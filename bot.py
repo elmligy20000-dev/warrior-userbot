@@ -1,350 +1,161 @@
+import telebot
+import requests
 import json
-import os
-import asyncio
-import random
-from telethon import TelegramClient, events, Button
-from datetime import datetime
-import google.generativeai as genai
-from openai import AsyncOpenAI
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 
-# مفاتيح Gemini الافتراضية بتاعتك
-GEMINI_KEYS = [
-    "AQ.Ab8RN6ILnpoY378d8n5hUb6VJvz0rSlV5DC_xFdQ7ib1-RXRdQ",
-    "AQ.Ab8RN6LHVg90hS6tSkX9KlscPfjqWbyUxIP2IowOOmo852C_Ow",
-    "AQ.Ab8RN6ILWRjgUVTEF_2Y8hYrm6EXANjj93JXTSMF0r74BpNLoA"
-]
-
-API_ID = 20867472 
-API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
 BOT_TOKEN = "8837648752:AAHICVc71aEknIjgrE_FoOH2nln7oEOSNUA"
 ADMIN_ID = 932862531 
 
-DB_FILE = 'ai_bot_db.json'
-waiting_for = {}
+API_KEYS = [
+    "sk-fa39f1423fe44b488da7cd04fa30f04f",
+    "sk-67f0479e08694544ac766dc7eb999cf1"
+]
+current_key_index = 0
+chat_history = {}
+waiting_for_key = {} # عشان نعرف الادمن بيكتب مفتاح ولا لا
 
-bot = TelegramClient('ai_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+def get_api_key():
+    global current_key_index
+    key = API_KEYS[current_key_index]
+    current_key_index = (current_key_index + 1) % len(API_KEYS)
+    return key
 
-def b(text):
-    """تحويل كل النص لعريض"""
-    return f"**{text}**"
+bot = telebot.TeleBot(TOKEN)
 
-def load_db():
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {
-        'users': {},
-        'settings': {
-            'openai_key': os.getenv("OPENAI_KEY", ""),
-            'gemini_keys': GEMINI_KEYS,
-            'provider': os.getenv("PROVIDER", "gemini"),
-            'openai_model': 'gpt-3.5-turbo',
-            'gemini_model': 'gemini-1.5-flash',
-            'max_tokens': 1000
-        },
-        'stats': {'total_messages': 0, 'total_users': 0}
-    }
+def main_menu(user_id):
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(InlineKeyboardButton("🗑️ مسح المحادثة", callback_data="clear_chat"))
+    if user_id == ADMIN_ID:
+        markup.add(InlineKeyboardButton("⚙️ لوحة المبرمج", callback_data="admin_panel"))
+    return markup
 
-def save_db():
-    with open(DB_FILE, 'w', encoding='utf-8') as f:
-        json.dump(db, f, ensure_ascii=False, indent=2)
-
-db = load_db()
-
-OPENAI_MODELS = ['gpt-3.5-turbo', 'gpt-4o', 'gpt-4o-mini']
-GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro']
-
-def get_main_buttons():
-    return [
-        [Button.inline(b("اسأل الذكاء الاصطناعي"), b"ask_ai")],
-        [Button.inline(b("مسح المحادثة"), b"clear_chat")],
-        [Button.url(b("💻 المبرمج"), "https://t.me/Programmer_error")]
-    ]
-
-def get_admin_buttons():
-    provider = db['settings']['provider']
-    model = db['settings']['openai_model'] if provider == 'openai' else db['settings']['gemini_model']
-    keys_count = len(db['settings']['gemini_keys'])
-    openai_status = "✅" if db['settings']['openai_key'] else "❌"
-    gemini_status = "✅" if keys_count > 0 else "❌"
-
-    return [
-        [Button.inline(b(f"🔑 OpenAI Key {openai_status}"), b"set_openai")],
-        [Button.inline(b(f"🔑 Gemini Keys [{keys_count}] {gemini_status}"), b"manage_keys")],
-        [Button.inline(b(f"📶 المزود: {provider.upper()}"), b"switch_provider")],
-        [Button.inline(b(f"💻 النموذج: {model}"), b"select_model")],
-        [Button.inline(b("👤 الاحصائيات"), b"stats")],
-        [Button.inline(b("🪐 المستخدمين"), b"users")],
-        [Button.inline(b("🗑️ مسح قاعدة البيانات"), b"reset_db")],
-        [Button.inline(b("✅ رجوع"), b"back_main")]
-    ]
-
-def get_model_buttons():
-    provider = db['settings']['provider']
-    models = OPENAI_MODELS if provider == 'openai' else GEMINI_MODELS
-    current = db['settings']['openai_model'] if provider == 'openai' else db['settings']['gemini_model']
-    buttons = []
-    for m in models:
-        icon = "✅" if m == current else "⚡"
-        buttons.append([Button.inline(b(f"{icon} {m}"), f"model_{m}".encode())])
-    buttons.append([Button.inline(b("✅ رجوع"), b"admin_panel")])
-    return buttons
-
-async def ask_openai(question):
-    client = AsyncOpenAI(api_key=db['settings']['openai_key'])
-    response = await client.chat.completions.create(
-        model=db['settings']['openai_model'],
-        messages=[{"role": "user", "content": question}],
-        max_tokens=db['settings']['max_tokens']
+def admin_panel_menu():
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("📊 حالة البوت", callback_data="bot_status"),
+        InlineKeyboardButton("🔑 ادارة المفاتيح", callback_data="keys_menu"),
+        InlineKeyboardButton("👥 عدد المستخدمين", callback_data="users_count"),
+        InlineKeyboardButton("🔙 رجوع", callback_data="back_main")
     )
-    return response.choices[0].message.content
+    return markup
 
-async def ask_gemini(question):
-    key = random.choice(db['settings']['gemini_keys'])
-    genai.configure(api_key=key)
-    model = genai.GenerativeModel(db['settings']['gemini_model'])
-    response = await model.generate_content_async(question)
-    return response.text
-
-@bot.on(events.NewMessage(pattern='/start', incoming=True))
-async def start(event):
-    uid = str(event.sender_id)
-
-    if uid not in db['users']:
-        db['users'][uid] = {
-            'name': event.sender.first_name or 'User',
-            'messages': 0,
-            'join_date': datetime.now().isoformat(),
-            'history': []
-        }
-        db['stats']['total_users'] += 1
-        save_db()
-
-    provider = db['settings']['provider'].upper()
-    model = db['settings']['openai_model'] if provider == 'OPENAI' else db['settings']['gemini_model']
-
-    # شلت اي كلام عن Gemini من الترحيب
-    text = b(
-        f"✨ اهلا بيك في بوت الذكاء الاصطناعي ✨\n\n"
-        f"⚡ اسأل عن اي حاجة تختارها\n"
-        f"اختر من القائمة:"
+def keys_menu():
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("➕ اضافة مفتاح", callback_data="add_key_btn"),
+        InlineKeyboardButton("🗑️ حذف مفتاح", callback_data="del_key_btn"),
+        InlineKeyboardButton("📋 عرض المفاتيح", callback_data="show_keys"),
+        InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")
     )
+    return markup
 
-    await event.reply(text, buttons=get_main_buttons(), link_preview=False, parse_mode='md')
+def ask_deepseek(user_id, prompt):
+    if user_id not in chat_history:
+        chat_history[user_id] = []
+    chat_history[user_id].append({"role": "user", "content": prompt})
+    messages = chat_history[user_id][-10:]
 
-@bot.on(events.CallbackQuery)
-async def callback(event):
-    uid = str(event.sender_id)
-    data = event.data.decode()
+    url = "https://api.deepseek.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {get_api_key()}", "Content-Type": "application/json"}
+    data = {"model": "deepseek-chat", "messages": messages, "max_tokens": 1200, "temperature": 0.7}
 
     try:
-        if event.is_group and int(uid)!= ADMIN_ID:
-            await event.answer(b("لوحة الادمن للخاص فقط 🔒"), alert=True)
-            return
-
-        if data == 'back_main':
-            await start(event)
-            return
-
-        if data == 'ask_ai':
-            waiting_for[uid] = 'waiting_question'
-            text = b("🐈 ابعت سؤالك دلوقتي")
-            await event.edit(text, buttons=[[Button.inline(b("الغاء"), b"back_main")]])
-
-        elif data == 'clear_chat':
-            db['users'][uid]['history'] = []
-            save_db()
-            await event.answer(b("✅ تم المسح"), alert=True)
-            await start(event)
-
-        elif data == 'admin_panel':
-            if int(uid)!= ADMIN_ID:
-                await event.answer(b("ممنوع"), alert=True)
-                return
-            await event.edit(b("💻 لوحة التحكم الكاملة\nاختر العملية:"), buttons=get_admin_buttons(), parse_mode='md')
-
-        elif data == 'set_openai':
-            if int(uid)!= ADMIN_ID: return
-            waiting_for[uid] = 'waiting_openai'
-            text = b("🔒 ابعت مفتاح OpenAI الجديد\nهيتم استبدال القديم")
-            await event.edit(text, buttons=[[Button.inline(b("الغاء"), b"admin_panel")]])
-
-        elif data == 'manage_keys':
-            if int(uid)!= ADMIN_ID: return
-            keys_count = len(db['settings']['gemini_keys'])
-            text = b(f"🔑 ادارة مفاتيح Gemini\nالعدد الحالي: {keys_count}\n\nاختر:")
-            buttons = [
-                [Button.inline(b("➕ اضافة مفتاح جديد"), b"set_gemini")],
-                [Button.inline(b("👁️ عرض المفاتيح"), b"show_keys")],
-                [Button.inline(b("🗑️ مسح كل المفاتيح"), b"clear_keys")],
-                [Button.inline(b("✅ رجوع"), b"admin_panel")]
-            ]
-            await event.edit(text, buttons=buttons, parse_mode='md')
-
-        elif data == 'set_gemini':
-            if int(uid)!= ADMIN_ID: return
-            waiting_for[uid] = 'waiting_gemini'
-            await event.edit(b("🔒 ابعت مفتاح Gemini الجديد\nهيتضاف مع المفاتيح القديمة"), buttons=[[Button.inline(b("الغاء"), b"manage_keys")]])
-
-        elif data == 'show_keys':
-            if int(uid)!= ADMIN_ID: return
-            keys = db['settings']['gemini_keys']
-            if not keys:
-                text = b("❌ لا توجد مفاتيح")
-            else:
-                text = b(f"🔑 المفاتيح المخزنة [{len(keys)}]:\n\n")
-                for i, k in enumerate(keys, 1):
-                    text += b(f"{i}. {k[:20]}...{k[-10:]}\n")
-            await event.edit(text, buttons=[[Button.inline(b("رجوع"), b"manage_keys")]], parse_mode='md')
-
-        elif data == 'clear_keys':
-            if int(uid)!= ADMIN_ID: return
-            db['settings']['gemini_keys'] = []
-            save_db()
-            await event.answer(b("🗑️ تم مسح كل المفاتيح"), alert=True)
-            await event.edit(b("💻 لوحة التحكم"), buttons=get_admin_buttons(), parse_mode='md')
-
-        elif data == 'switch_provider':
-            if int(uid)!= ADMIN_ID: return
-            current = db['settings']['provider']
-            if current == 'openai' and len(db['settings']['gemini_keys']) > 0:
-                db['settings']['provider'] = 'gemini'
-                msg = b("✅ تم التبديل للمزود الثاني")
-            elif current == 'gemini' and db['settings']['openai_key']:
-                db['settings']['provider'] = 'openai'
-                msg = b("✅ تم التبديل للمزود الاول")
-            else:
-                msg = b("🔒 اضف المفتاح الاول")
-            save_db()
-            await event.answer(msg, alert=True)
-            await event.edit(b("💻 لوحة التحكم"), buttons=get_admin_buttons(), parse_mode='md')
-
-        elif data == 'select_model':
-            if int(uid)!= ADMIN_ID: return
-            provider = db['settings']['provider'].upper()
-            await event.edit(b(f"💻 اختر النموذج للمزود {provider}"), buttons=get_model_buttons(), parse_mode='md')
-
-        elif data.startswith('model_'):
-            if int(uid)!= ADMIN_ID: return
-            model = data.replace('model_', '')
-            provider = db['settings']['provider']
-            if provider == 'openai':
-                db['settings']['openai_model'] = model
-            else:
-                db['settings']['gemini_model'] = model
-            save_db()
-            await event.answer(b(f"✅ تم التغيير لـ {model}"), alert=True)
-            await event.edit(b("💻 لوحة التحكم"), buttons=get_admin_buttons(), parse_mode='md')
-
-        elif data == 'stats':
-            if int(uid)!= ADMIN_ID: return
-            provider = db['settings']['provider'].upper()
-            model = db['settings']['openai_model'] if provider == 'OPENAI' else db['settings']['gemini_model']
-            keys_count = len(db['settings']['gemini_keys'])
-            text = b(
-                f"📶 الاحصائيات الكاملة\n"
-                f"👤 المستخدمين: {db['stats']['total_users']}\n"
-                f"🚀 الرسائل: {db['stats']['total_messages']}\n"
-                f"✨ المزود: {provider}\n"
-                f"💻 النموذج: {model}\n"
-                f"🔑 مفاتيح Gemini: {keys_count}"
-            )
-            await event.edit(text, buttons=[[Button.inline(b("رجوع"), b"admin_panel")]], parse_mode='md')
-
-        elif data == 'users':
-            if int(uid)!= ADMIN_ID: return
-            text = b("👤 اخر 15 مستخدم:\n\n")
-            for i, (u_id, info) in enumerate(list(db['users'].items())[-15:], 1):
-                text += b(f"{i}. {info['name']} - {info['messages']} رسالة\n")
-            await event.edit(text, buttons=[[Button.inline(b("رجوع"), b"admin_panel")]], parse_mode='md')
-
-        elif data == 'reset_db':
-            if int(uid)!= ADMIN_ID: return
-            text = b("⚠️ متأكد عايز تمسح قاعدة البيانات كلها؟\nالمستخدمين والاحصائيات هتتمسح")
-            buttons = [
-                [Button.inline(b("نعم امسح"), b"confirm_reset")],
-                [Button.inline(b("الغاء"), b"admin_panel")]
-            ]
-            await event.edit(text, buttons=buttons, parse_mode='md')
-
-        elif data == 'confirm_reset':
-            if int(uid)!= ADMIN_ID: return
-            db['users'] = {}
-            db['stats'] = {'total_messages': 0, 'total_users': 0}
-            save_db()
-            await event.answer(b("🗑️ تم مسح قاعدة البيانات"), alert=True)
-            await event.edit(b("💻 لوحة التحكم"), buttons=get_admin_buttons(), parse_mode='md')
-
-    except Exception as e:
-        await event.answer(b(f"خطأ: {str(e)[:40]}"), alert=True)
-
-@bot.on(events.NewMessage(incoming=True, func=lambda e: e.is_private or e.is_group))
-async def handler(event):
-    uid = str(event.sender_id)
-
-    if event.sender.bot:
-        return
-
-    # امر /keys للادمن
-    if event.raw_text == '/keys' and int(uid) == ADMIN_ID and event.is_private:
-        keys = db['settings']['gemini_keys']
-        if not keys:
-            await event.reply(b("❌ لا توجد مفاتيح مخزنة"))
+        res = requests.post(url, headers=headers, json=data, timeout=30)
+        if res.status_code == 200:
+            reply = res.json()['choices'][0]['message']['content']
+            chat_history[user_id].append({"role": "assistant", "content": reply})
+            return reply
         else:
-            text = b(f"🔑 مفاتيح Gemini [{len(keys)}]:\n\n")
-            for i, k in enumerate(keys, 1):
-                text += b(f"{i}. {k[:25]}...{k[-10:]}\n")
-        await event.reply(text, parse_mode='md')
+            return f"❌ خطأ API: {res.status_code}"
+    except Exception as e:
+        return f"❌ خطأ اتصال: {e}"
+
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.send_message(message.chat.id, "🤖 اهلاً بيك في بوت DeepSeek المتطور\nابعت سؤالك او استخدم الازرار:", reply_markup=main_menu(message.from_user.id))
+
+@bot.message_handler(func=lambda m: True)
+def handle_message(message):
+    user_id = message.from_user.id
+
+    # لو الادمن بيضيف مفتاح
+    if user_id in waiting_for_key and waiting_for_key[user_id]:
+        new_key = message.text.strip()
+        if new_key.startswith("sk-"):
+            if new_key not in API_KEYS:
+                API_KEYS.append(new_key)
+                bot.send_message(user_id, f"✅ تم اضافة المفتاح بنجاح\nالاجمالي: {len(API_KEYS)} مفاتيح", reply_markup=keys_menu())
+            else:
+                bot.send_message(user_id, "⚠️ المفتاح موجود اصلا", reply_markup=keys_menu())
+        else:
+            bot.send_message(user_id, "❌ المفتاح لازم يبدأ بـ sk-", reply_markup=keys_menu())
+        waiting_for_key[user_id] = False
         return
 
-    if uid in waiting_for:
-        if waiting_for[uid] == 'waiting_openai' and int(uid) == ADMIN_ID and event.is_private:
-            db['settings']['openai_key'] = event.raw_text.strip()
-            save_db()
-            del waiting_for[uid]
-            await event.reply(b("✅ تم حفظ مفتاح OpenAI"), parse_mode='md')
-            return
+    if user_id == ADMIN_ID and message.text.startswith('/'):
+        return
 
-        if waiting_for[uid] == 'waiting_gemini' and int(uid) == ADMIN_ID and event.is_private:
-            new_key = event.raw_text.strip()
-            if new_key not in db['settings']['gemini_keys']:
-                db['settings']['gemini_keys'].append(new_key)
-                save_db()
-                msg = b(f"✅ تم اضافة المفتاح\nالاجمالي: {len(db['settings']['gemini_keys'])} مفتاح")
-            else:
-                msg = b("⚡ المفتاح موجود بالفعل")
-            del waiting_for[uid]
-            await event.reply(msg, parse_mode='md')
-            return
+    bot.send_chat_action(message.chat.id, 'typing')
+    reply = ask_deepseek(user_id, message.text)
+    bot.reply_to(message, reply, reply_markup=main_menu(user_id))
 
-        if waiting_for[uid] == 'waiting_question':
-            question = event.raw_text.strip()
-            del waiting_for[uid]
-            provider = db['settings']['provider']
+@bot.callback_query_handler(func=lambda call: True)
+def callback_handler(call):
+    user_id = call.from_user.id
+    msg_id = call.message_id
 
-            if provider == 'openai' and not db['settings']['openai_key']:
-                await event.reply(b("🔒 المفتاح غير موجود"), parse_mode='md')
-                return
+    if call.data == "back_main":
+        bot.edit_message_text("القائمة الرئيسية:", user_id, msg_id, reply_markup=main_menu(user_id))
 
-            if provider == 'gemini' and len(db['settings']['gemini_keys']) == 0:
-                await event.reply(b("🔒 لا توجد مفاتيح"), parse_mode='md')
-                return
+    elif call.data == "admin_panel" and user_id == ADMIN_ID:
+        bot.edit_message_text("⚙️ لوحة المبرمج المتطورة:", user_id, msg_id, reply_markup=admin_panel_menu())
 
-            msg_wait = await event.reply(b("⚡ جاري المعالجة..."), parse_mode='md')
-            try:
-                if provider == 'openai':
-                    answer = await ask_openai(question)
-                else:
-                    answer = await ask_gemini(question)
+    elif call.data == "keys_menu" and user_id == ADMIN_ID:
+        bot.edit_message_text("🔑 ادارة المفاتيح:", user_id, msg_id, reply_markup=keys_menu())
 
-                db['stats']['total_messages'] += 1
-                db['users'][uid]['messages'] += 1
-                save_db()
+    elif call.data == "bot_status" and user_id == ADMIN_ID:
+        status = f"""📊 **حالة البوت المتطور**
 
-                answer_text = b(f"✨ الاجابة:\n\n{answer}")
-                await msg_wait.edit(answer_text, buttons=get_main_buttons(), parse_mode='md')
-            except Exception as e:
-                await msg_wait.edit(b(f"🔒 خطأ: {str(e)[:100]}"), parse_mode='md')
+🔑 المفاتيح: {len(API_KEYS)} شغال
+👥 المستخدمين: {len(chat_history)}
+🔄 المفتاح الحالي: {API_KEYS[current_key_index][:15]}...
+💾 الذاكرة: {sum(len(v) for v in chat_history.values())} رسالة
+🟢 الحالة: اونلاين"""
+        bot.edit_message_text(status, user_id, msg_id, parse_mode="Markdown", reply_markup=admin_panel_menu())
 
-print(b("🚀 البوت شغال"))
-bot.run_until_disconnected()
+    elif call.data == "users_count" and user_id == ADMIN_ID:
+        bot.edit_message_text(f"👥 عدد المستخدمين النشطين: {len(chat_history)}", user_id, msg_id, reply_markup=admin_panel_menu())
+
+    elif call.data == "show_keys" and user_id == ADMIN_ID:
+        if not API_KEYS:
+            text = "مفيش مفاتيح!"
+        else:
+            text = "📋 **المفاتيح الحالية:**\n" + "\n".join([f"{i+1}. `{k[:20]}...`" for i,k in enumerate(API_KEYS)])
+        bot.edit_message_text(text, user_id, msg_id, parse_mode="Markdown", reply_markup=keys_menu())
+
+    elif call.data == "add_key_btn" and user_id == ADMIN_ID:
+        waiting_for_key[user_id] = True
+        bot.edit_message_text("➕ ابعت المفتاح الجديد دلوقتي:\nلازم يبدأ بـ sk-", user_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ الغاء", callback_data="keys_menu")))
+
+    elif call.data == "del_key_btn" and user_id == ADMIN_ID:
+        markup = InlineKeyboardMarkup(row_width=3)
+        buttons = [InlineKeyboardButton(f"{i+1}", callback_data=f"del_{i}") for i in range(len(API_KEYS))]
+        markup.add(*buttons)
+        markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="keys_menu"))
+        bot.edit_message_text("🗑️ اختار رقم المفتاح للحذف:", user_id, msg_id, reply_markup=markup)
+
+    elif call.data.startswith("del_") and user_id == ADMIN_ID:
+        num = int(call.data.split("_")[1])
+        if 0 <= num < len(API_KEYS):
+            API_KEYS.pop(num)
+            bot.answer_callback_query(call.id, "تم الحذف ✅")
+            bot.edit_message_text(f"تم حذف المفتاح. باقي: {len(API_KEYS)}", user_id, msg_id, reply_markup=keys_menu())
+
+    elif call.data == "clear_chat":
+        if user_id in chat_history:
+            chat_history[user_id] = []
+        bot.answer_callback_query(call.id, "✅ تم مسح الذاكرة")
+        bot.send_message(user_id, "تم مسح المحادثة بنجاح 👌", reply_markup=main_menu(user_id))
+
+print("البوت المتطور شغال 24/7...")
+bot.infinity_polling()
