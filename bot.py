@@ -72,7 +72,8 @@ API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
 BOT_TOKEN = "8837648752:AAHICVc71aEknIjgrE_FoOH2nln7oEOSNUA"
 ADMIN_ID = 932862531
 DEVELOPER_ID = 932862531
-
+required_channel = "Programmer_error1" 
+required_group = "Programmer_error2"
 bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 # Helper functions
 def get_db_connection():
@@ -168,6 +169,14 @@ async def get_user_client(user_id: int) -> Optional[TelegramClient]:
         if not await client.is_user_authorized():
             return None
         return client
+    except (SessionRevokedError, AuthKeyUnregisteredError) as e:
+        logger.error(f"Session error for user {user_id}: {e}")
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET session = NULL WHERE user_id = ?', (user_id,))
+        conn.commit()
+        conn.close()
+        return None
     except Exception as e:
         logger.error(f"Error creating client for user {user_id}: {e}")
         return None
@@ -205,7 +214,7 @@ def create_main_keyboard(user_id: int) -> list:
         [Button.inline("📋 جلب البيانات", b"fetch_data")],
         [Button.inline("🔗 الانضمام التلقائي", b"auto_join")],
         [Button.inline("👤 معلومات حسابي", b"account_info")],
-        [Button.inline("👨‍💻 المطور", b"developer")]
+        [Button.inline("👨‍💻 المبرمج", b"developer")]
     ]
 
     if is_user_admin(user_id):
@@ -224,8 +233,8 @@ async def start_handler(event):
     is_subscribed, message = await check_subscription(user_id)
     if not is_subscribed:
         keyboard = [
-            [Button.url("📢 الاشتراك في القناة", f"https://t.me/{get_admin_settings()['required_channel']}")],
-            [Button.url("👥 الانضمام إلى المجموعة", f"https://t.me/{get_admin_settings()['required_group']}")],
+            [Button.url("📢 الاشتراك في قناة السورس", f"https://t.me/{get_admin_settings()['required_channel']}")],
+            [Button.url("👥 الانضمام إلى جروب الدعم", f"https://t.me/{get_admin_settings()['required_group']}")],
             [Button.inline("✅ تم الاشتراك", b"check_subscription")]
         ]
         await event.respond(message, buttons=keyboard)
@@ -251,8 +260,8 @@ async def check_subscription_handler(event):
         )
     else:
         keyboard = [
-            [Button.url("📢 الاشتراك في القناة", f"https://t.me/{get_admin_settings()['required_channel']}")],
-            [Button.url("👥 الانضمام إلى المجموعة", f"https://t.me/{get_admin_settings()['required_group']}")],
+            [Button.url("📢 الاشتراك في قناة السورس", f"https://t.me/{get_admin_settings()['required_channel']}")],
+            [Button.url("👥 الانضمام إلى جروب الدعم", f"https://t.me/{get_admin_settings()['required_group']}")],
             [Button.inline("✅ تم الاشتراك", b"check_subscription")]
         ]
         await event.edit(message, buttons=keyboard)
@@ -267,8 +276,8 @@ async def callback_handler(event):
     is_subscribed, message = await check_subscription(user_id)
     if not is_subscribed:
         keyboard = [
-            [Button.url("📢 الاشتراك في القناة", f"https://t.me/{get_admin_settings()['required_channel']}")],
-            [Button.url("👥 الانضمام إلى المجموعة", f"https://t.me/{get_admin_settings()['required_group']}")],
+            [Button.url("📢 الاشتراك في قناة السورس", f"https://t.me/{get_admin_settings()['required_channel']}")],
+            [Button.url("👥 الانضمام إلى جروب الدعم", f"https://t.me/{get_admin_settings()['required_group']}")],
             [Button.inline("✅ تم الاشتراك", b"check_subscription")]
         ]
         await event.edit(message, buttons=keyboard)
@@ -278,6 +287,10 @@ async def callback_handler(event):
 
     if data == b"add_account":
         await add_account_handler(event)
+    elif data == b"add_phone":
+        await add_phone_handler(event)
+    elif data == b"add_session":
+        await add_session_handler(event)
     elif data == b"smart_clean":
         await smart_clean_handler(event)
     elif data == b"fetch_data":
@@ -301,12 +314,12 @@ async def callback_handler(event):
 
 async def developer_handler(event):
     developer_keyboard = [
-        [Button.url("👨‍💻 تواصل مع المطور", "https://t.me/shmrye")],
+        [Button.url("👨‍💻 تواصل مع المبرمج", "https://t.me/Programmer_error")],
         [Button.inline("🔙 رجوع", b"back_to_main")]
     ]
     await event.edit(
-        "👨‍💻 **المطور**\n\n"
-        "البوت من تطوير @shmrye\n"
+        "👨‍💻 **المبرمج**\n\n"
+        "البوت من برمجة @Programmer_error\n"
         "لأي استفسار أو اقتراح تواصل معي.",
         buttons=developer_keyboard
     )
@@ -327,80 +340,101 @@ async def add_phone_handler(event):
     await event.edit("📱 **إضافة برقم هاتف**\n\n"
                     "يرجى إرسال رقم هاتفك بالصيغة الدولية (مثال: +966512345678)")
 
-    phone_event = await bot.wait_for([events.NewMessage(from_users=event.sender_id)], timeout=300)
-    phone = phone_event.text.strip()
-
-    if not re.match(r'^\+\d{8,15}$', phone):
-        await event.respond("❌ رقم الهاتف غير صالح. يجب أن يكون بالصيغة الدولية.")
-        return
-
     try:
-        client = TelegramClient(
-            StringSession(),
-            API_ID,
-            API_HASH,
-            device_model="iPhone 17 Pro"
-        )
-        await client.connect()
+        phone_event = await bot.wait_for([events.NewMessage(from_users=event.sender_id)], timeout=300)
+        phone = phone_event.text.strip()
 
-        if not await client.is_user_authorized():
-            await client.send_code_request(phone)
-            await event.edit("🔑 **إدخال رمز التحقق**\n\n"
-                           "تم إرسال رمز التحقق إلى رقم هاتفك. يرجى إرساله هنا.")
-
-            code_event = await bot.wait_for([events.NewMessage(from_users=event.sender_id)], timeout=300)
-            code = code_event.text.strip()
-
-            try:
-                await client.sign_in(phone, code)
-            except SessionPasswordNeededError:
-                await event.edit("🔒 **إدخال كلمة مرور التحقق الثنائي**\n\n"
-                               "يرجى إرسال كلمة مرور التحقق الثنائي.")
-
-                password_event = await bot.wait_for([events.NewMessage(from_users=event.sender_id)], timeout=300)
-                password = password_event.text.strip()
-                await client.sign_in(password=password)
-
-            session = client.session.save()
-            await update_session(event.sender_id, session)
-            await event.edit("✅ تم إضافة الحساب بنجاح!")
-            await client.disconnect()
+        if not re.match(r'^\+\d{8,15}$', phone):
+            await event.respond("❌ رقم الهاتف غير صالح. يجب أن يكون بالصيغة الدولية.")
             return
 
-    except PhoneCodeInvalidError:
-        await event.respond("❌ رمز التحقق غير صالح.")
-    except PhoneNumberInvalidError:
-        await event.respond("❌ رقم الهاتف غير صالح.")
+        try:
+            client = TelegramClient(
+                StringSession(),
+                API_ID,
+                API_HASH,
+                device_model="iPhone 17 Pro"
+            )
+            await client.connect()
+
+            if not await client.is_user_authorized():
+                await client.send_code_request(phone)
+                await event.edit("🔑 **إدخال رمز التحقق**\n\n"
+                               "تم إرسال رمز التحقق إلى رقم هاتفك. يرجى إرساله هنا.")
+
+                try:
+                    code_event = await bot.wait_for([events.NewMessage(from_users=event.sender_id)], timeout=300)
+                    code = code_event.text.strip()
+
+                    try:
+                        await client.sign_in(phone, code)
+                    except SessionPasswordNeededError:
+                        await event.edit("🔒 **إدخال كلمة مرور التحقق الثنائي**\n\n"
+                                       "يرجى إرسال كلمة مرور التحقق الثنائي.")
+
+                        password_event = await bot.wait_for([events.NewMessage(from_users=event.sender_id)], timeout=300)
+                        password = password_event.text.strip()
+                        await client.sign_in(password=password)
+
+                    session = client.session.save()
+                    await update_session(event.sender_id, session)
+                    await event.edit("✅ تم إضافة الحساب بنجاح!")
+                    await client.disconnect()
+                    return
+                except PhoneCodeInvalidError:
+                    await event.respond("❌ رمز التحقق غير صالح.")
+                    return
+                except Exception as e:
+                    logger.error(f"Error during sign in: {e}")
+                    await event.respond(f"❌ حدث خطأ أثناء تسجيل الدخول: {str(e)}")
+                    return
+
+        except PhoneNumberInvalidError:
+            await event.respond("❌ رقم الهاتف غير صالح.")
+        except Exception as e:
+            logger.error(f"Error adding account by phone: {e}")
+            await event.respond(f"❌ حدث خطأ أثناء إضافة الحساب: {str(e)}")
+    except asyncio.TimeoutError:
+        await event.edit("❌ انتهت مهلة الانتظار. يرجى المحاولة مرة أخرى.")
     except Exception as e:
-        logger.error(f"Error adding account by phone: {e}")
-        await event.respond("❌ حدث خطأ أثناء إضافة الحساب.")
+        logger.error(f"Unexpected error in add_phone_handler: {e}")
+        await event.respond("❌ حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.")
 
 async def add_session_handler(event):
     await event.edit("🔑 **إضافة بسيشن جاهز**\n\n"
                     "يرجى إرسال Session String الخاص بك.")
 
-    session_event = await bot.wait_for([events.NewMessage(from_users=event.sender_id)], timeout=300)
-    session = session_event.text.strip()
-
     try:
-        client = TelegramClient(
-            StringSession(session),
-            API_ID,
-            API_HASH,
-            device_model="iPhone 17 Pro"
-        )
-        await client.connect()
+        session_event = await bot.wait_for([events.NewMessage(from_users=event.sender_id)], timeout=300)
+        session = session_event.text.strip()
 
-        if not await client.is_user_authorized():
-            await event.respond("❌ Session String غير صالح.")
-            return
+        try:
+            client = TelegramClient(
+                StringSession(session),
+                API_ID,
+                API_HASH,
+                device_model="iPhone 17 Pro"
+            )
+            await client.connect()
 
-        await update_session(event.sender_id, session)
-        await event.edit("✅ تم إضافة الحساب بنجاح!")
-        await client.disconnect()
+            if not await client.is_user_authorized():
+                await event.respond("❌ Session String غير صالح.")
+                return
+
+            me = await client.get_me()
+            await update_session(event.sender_id, session)
+            await event.edit(f"✅ تم إضافة الحساب بنجاح!\nالاسم: {me.first_name}\nاسم المستخدم: @{me.username if me.username else 'غير متوفر'}")
+            await client.disconnect()
+        except (SessionRevokedError, AuthKeyUnregisteredError):
+            await event.respond("❌ الجلسة غير صالحة أو تم إلغاؤها.")
+        except Exception as e:
+            logger.error(f"Error adding account by session: {e}")
+            await event.respond(f"❌ حدث خطأ أثناء إضافة الحساب: {str(e)}")
+    except asyncio.TimeoutError:
+        await event.edit("❌ انتهت مهلة الانتظار. يرجى المحاولة مرة أخرى.")
     except Exception as e:
-        logger.error(f"Error adding account by session: {e}")
-        await event.respond("❌ حدث خطأ أثناء إضافة الحساب.")
+        logger.error(f"Unexpected error in add_session_handler: {e}")
+        await event.respond("❌ حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.")
 
 async def smart_clean_handler(event):
     keyboard = [
