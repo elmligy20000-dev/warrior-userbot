@@ -72,7 +72,7 @@ def ask_deepseek(user_id, prompt):
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(message.chat.id, "🤖 اهلاً بيك في بوت DeepSeek المتطور\nابعت سؤالك او استخدم الازرار:", reply_markup=main_menu(message.from_user.id))
+    bot.send_message(message.chat.id, "🤖 اهلاً بيك في بوت Error ذكاء اصطناعي متطور\nابعت سؤالك او استخدم الازرار:", reply_markup=main_menu(message.from_user.id))
 
 @bot.message_handler(func=lambda m: True)
 def handle_message(message):
