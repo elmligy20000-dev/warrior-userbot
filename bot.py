@@ -1,7 +1,7 @@
 import os
 import asyncio
 import logging
-from telethon import TelegramClient, events, functions, types
+from telethon import TelegramClient, events, functions, types, Button
 from telethon.sessions import StringSession
 from telethon.tl.functions.messages import ImportChatInviteRequest, CheckChatInviteRequest
 from telethon.tl.functions.channels import JoinChannelRequest, LeaveChannelRequest
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 DB_NAME = 'cleaner_bot.db'
 
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(DB_NAME, check_same_thread=False)
     cursor = conn.cursor()
 
     # Users table
@@ -58,10 +58,10 @@ def init_db():
     if cursor.fetchone()[0] == 0:
         cursor.execute('''
         INSERT INTO admin_settings (required_channel, required_group)
-        VALUES (?, ?)
+        VALUES (?,?)
         ''', ('', ''))
+        conn.commit()
 
-    conn.commit()
     conn.close()
 
 init_db()
@@ -71,8 +71,9 @@ API_ID = 20867472
 API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
 BOT_TOKEN = "8837648752:AAHICVc71aEknIjgrE_FoOH2nln7oEOSNUA"
 ADMIN_ID = 932862531
-bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+DEVELOPER_ID = 932862531
 
+bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 # Helper functions
 def get_db_connection():
     conn = sqlite3.connect(DB_NAME)
@@ -121,17 +122,25 @@ async def check_subscription(user_id: int) -> Tuple[bool, str]:
 
     try:
         if settings['required_channel']:
-            channel = await bot.get_entity(settings['required_channel'])
-            if not await bot(functions.channels.GetParticipantRequest(
-                channel=channel,
-                participant=user_id
-            )):
-                return False, f"يجب الاشتراك في القناة: {settings['required_channel']}"
+            try:
+                channel = await bot.get_entity(settings['required_channel'])
+                if not await bot(functions.channels.GetParticipantRequest(
+                    channel=channel,
+                    participant=user_id
+                )):
+                    return False, f"يجب الاشتراك في القناة: @{settings['required_channel']}"
+            except Exception as e:
+                logger.error(f"Error checking channel subscription: {e}")
+                return False, f"حدث خطأ أثناء التحقق من القناة: @{settings['required_channel']}"
 
         if settings['required_group']:
-            group = await bot.get_entity(settings['required_group'])
-            if not await bot(functions.messages.GetFullChatRequest(chat_id=group.id)):
-                return False, f"يجب الانضمام إلى المجموعة: {settings['required_group']}"
+            try:
+                group = await bot.get_entity(settings['required_group'])
+                if not await bot(functions.messages.GetFullChatRequest(chat_id=group.id)):
+                    return False, f"يجب الانضمام إلى المجموعة: @{settings['required_group']}"
+            except Exception as e:
+                logger.error(f"Error checking group subscription: {e}")
+                return False, f"حدث خطأ أثناء التحقق من المجموعة: @{settings['required_group']}"
 
         return True, ""
     except Exception as e:
@@ -189,6 +198,21 @@ async def update_session(user_id: int, session: str):
     conn.commit()
     conn.close()
 
+def create_main_keyboard(user_id: int) -> list:
+    keyboard = [
+        [Button.inline("📥 إضافة حساب", b"add_account")],
+        [Button.inline("🧹 التنظيف الذكي", b"smart_clean")],
+        [Button.inline("📋 جلب البيانات", b"fetch_data")],
+        [Button.inline("🔗 الانضمام التلقائي", b"auto_join")],
+        [Button.inline("👤 معلومات حسابي", b"account_info")],
+        [Button.inline("👨‍💻 المطور", b"developer")]
+    ]
+
+    if is_user_admin(user_id):
+        keyboard.append([Button.inline("👑 لوحة التحكم", b"admin_panel")])
+
+    return keyboard
+
 # Bot handlers
 @bot.on(events.NewMessage(pattern='/start'))
 async def start_handler(event):
@@ -199,28 +223,39 @@ async def start_handler(event):
 
     is_subscribed, message = await check_subscription(user_id)
     if not is_subscribed:
-        await event.respond(message)
+        keyboard = [
+            [Button.url("📢 الاشتراك في القناة", f"https://t.me/{get_admin_settings()['required_channel']}")],
+            [Button.url("👥 الانضمام إلى المجموعة", f"https://t.me/{get_admin_settings()['required_group']}")],
+            [Button.inline("✅ تم الاشتراك", b"check_subscription")]
+        ]
+        await event.respond(message, buttons=keyboard)
         return
 
     await add_user(user_id, event.sender.username)
-
-    keyboard = [
-        [{"text": "📥 إضافة حساب", "callback": "add_account"}],
-        [{"text": "🧹 التنظيف الذكي", "callback": "smart_clean"}],
-        [{"text": "📋 جلب البيانات", "callback": "fetch_data"}],
-        [{"text": "🔗 الانضمام التلقائي", "callback": "auto_join"}],
-        [{"text": "👤 معلومات حسابي", "callback": "account_info"}]
-    ]
-
-    if is_user_admin(user_id):
-        keyboard.append([{"text": "👑 لوحة التحكم", "callback": "admin_panel"}])
 
     await event.respond(
         "🌟 **مرحبا بك في بوت التنظيف الاحترافي** 🌟\n\n"
         "يمكنك استخدام البوت لتنظيف حساباتك وإدارتها بسهولة.\n"
         "اختر أحد الخيارات أدناه للبدء:",
-        buttons=keyboard
+        buttons=create_main_keyboard(user_id)
     )
+
+@bot.on(events.CallbackQuery(data=b"check_subscription"))
+async def check_subscription_handler(event):
+    user_id = event.sender_id
+    is_subscribed, message = await check_subscription(user_id)
+    if is_subscribed:
+        await event.edit(
+            "✅ تم التحقق من الاشتراك بنجاح!",
+            buttons=create_main_keyboard(user_id)
+        )
+    else:
+        keyboard = [
+            [Button.url("📢 الاشتراك في القناة", f"https://t.me/{get_admin_settings()['required_channel']}")],
+            [Button.url("👥 الانضمام إلى المجموعة", f"https://t.me/{get_admin_settings()['required_group']}")],
+            [Button.inline("✅ تم الاشتراك", b"check_subscription")]
+        ]
+        await event.edit(message, buttons=keyboard)
 
 @bot.on(events.CallbackQuery)
 async def callback_handler(event):
@@ -231,37 +266,56 @@ async def callback_handler(event):
 
     is_subscribed, message = await check_subscription(user_id)
     if not is_subscribed:
-        await event.respond(message)
+        keyboard = [
+            [Button.url("📢 الاشتراك في القناة", f"https://t.me/{get_admin_settings()['required_channel']}")],
+            [Button.url("👥 الانضمام إلى المجموعة", f"https://t.me/{get_admin_settings()['required_group']}")],
+            [Button.inline("✅ تم الاشتراك", b"check_subscription")]
+        ]
+        await event.edit(message, buttons=keyboard)
         return
 
-    data = event.data.decode()
+    data = event.data
 
-    if data == "add_account":
+    if data == b"add_account":
         await add_account_handler(event)
-    elif data == "smart_clean":
+    elif data == b"smart_clean":
         await smart_clean_handler(event)
-    elif data == "fetch_data":
+    elif data == b"fetch_data":
         await fetch_data_handler(event)
-    elif data == "auto_join":
+    elif data == b"auto_join":
         await auto_join_handler(event)
-    elif data == "account_info":
+    elif data == b"account_info":
         await account_info_handler(event)
-    elif data == "admin_panel" and is_user_admin(user_id):
+    elif data == b"admin_panel" and is_user_admin(user_id):
         await admin_panel_handler(event)
-    elif data.startswith("clean_"):
+    elif data == b"developer":
+        await developer_handler(event)
+    elif data.startswith(b"clean_"):
         await clean_action_handler(event, data)
-    elif data.startswith("fetch_"):
+    elif data.startswith(b"fetch_"):
         await fetch_action_handler(event, data)
-    elif data.startswith("join_"):
+    elif data.startswith(b"join_"):
         await join_action_handler(event, data)
-    elif data == "back_to_main":
+    elif data == b"back_to_main":
         await start_handler(event)
+
+async def developer_handler(event):
+    developer_keyboard = [
+        [Button.url("👨‍💻 تواصل مع المطور", "https://t.me/shmrye")],
+        [Button.inline("🔙 رجوع", b"back_to_main")]
+    ]
+    await event.edit(
+        "👨‍💻 **المطور**\n\n"
+        "البوت من تطوير @shmrye\n"
+        "لأي استفسار أو اقتراح تواصل معي.",
+        buttons=developer_keyboard
+    )
 
 async def add_account_handler(event):
     keyboard = [
-        [{"text": "📱 إضافة برقم هاتف", "callback": "add_phone"}],
-        [{"text": "🔑 إضافة بسيشن جاهز", "callback": "add_session"}],
-        [{"text": "🔙 رجوع", "callback": "back_to_main"}]
+        [Button.inline("📱 إضافة برقم هاتف", b"add_phone")],
+        [Button.inline("🔑 إضافة بسيشن جاهز", b"add_session")],
+        [Button.inline("🔙 رجوع", b"back_to_main")]
     ]
     await event.edit(
         "📥 **إضافة حساب**\n\n"
@@ -350,12 +404,12 @@ async def add_session_handler(event):
 
 async def smart_clean_handler(event):
     keyboard = [
-        [{"text": "🗑 حذف محادثات الخاص", "callback": "clean_private_chats"}],
-        [{"text": "🤖 حذف محادثات البوتات", "callback": "clean_bot_chats"}],
-        [{"text": "🚪 مغادرة الجروبات", "callback": "clean_groups"}],
-        [{"text": "📢 مغادرة القنوات", "callback": "clean_channels"}],
-        [{"text": "🧹 تنظيف الكل", "callback": "clean_all"}],
-        [{"text": "🔙 رجوع", "callback": "back_to_main"}]
+        [Button.inline("🗑 حذف محادثات الخاص", b"clean_private_chats")],
+        [Button.inline("🤖 حذف محادثات البوتات", b"clean_bot_chats")],
+        [Button.inline("🚪 مغادرة الجروبات", b"clean_groups")],
+        [Button.inline("📢 مغادرة القنوات", b"clean_channels")],
+        [Button.inline("🧹 تنظيف الكل", b"clean_all")],
+        [Button.inline("🔙 رجوع", b"back_to_main")]
     ]
     await event.edit(
         "🧹 **التنظيف الذكي**\n\n"
@@ -371,27 +425,27 @@ async def clean_action_handler(event, action):
         return
 
     try:
-        if action == "clean_private_chats":
+        if action == b"clean_private_chats":
             await event.edit("🗑 **حذف محادثات الخاص**\n\nجاري حذف المحادثات...")
             await delete_private_chats(client, user_id)
             await event.edit("✅ تم حذف محادثات الخاص بنجاح!")
 
-        elif action == "clean_bot_chats":
+        elif action == b"clean_bot_chats":
             await event.edit("🤖 **حذف محادثات البوتات**\n\nجاري حذف المحادثات...")
             await delete_bot_chats(client, user_id)
             await event.edit("✅ تم حذف محادثات البوتات بنجاح!")
 
-        elif action == "clean_groups":
+        elif action == b"clean_groups":
             await event.edit("🚪 **مغادرة الجروبات**\n\nجاري مغادرة الجروبات...")
             await leave_groups(client, user_id)
             await event.edit("✅ تم مغادرة الجروبات بنجاح!")
 
-        elif action == "clean_channels":
+        elif action == b"clean_channels":
             await event.edit("📢 **مغادرة القنوات**\n\nجاري مغادرة القنوات...")
             await leave_channels(client, user_id)
             await event.edit("✅ تم مغادرة القنوات بنجاح!")
 
-        elif action == "clean_all":
+        elif action == b"clean_all":
             await event.edit("🧹 **تنظيف الكل**\n\nجاري تنفيذ جميع عمليات التنظيف...")
             await delete_private_chats(client, user_id)
             await delete_bot_chats(client, user_id)
@@ -469,11 +523,11 @@ async def leave_channels(client: TelegramClient, user_id: int):
 
 async def fetch_data_handler(event):
     keyboard = [
-        [{"text": "📢 جلب القنوات", "callback": "fetch_channels"}],
-        [{"text": "👥 جلب الجروبات", "callback": "fetch_groups"}],
-        [{"text": "🤖 جلب البوتات", "callback": "fetch_bots"}],
-        [{"text": "📋 جلب الكل", "callback": "fetch_all"}],
-        [{"text": "🔙 رجوع", "callback": "back_to_main"}]
+        [Button.inline("📢 جلب القنوات", b"fetch_channels")],
+        [Button.inline("👥 جلب الجروبات", b"fetch_groups")],
+        [Button.inline("🤖 جلب البوتات", b"fetch_bots")],
+        [Button.inline("📋 جلب الكل", b"fetch_all")],
+        [Button.inline("🔙 رجوع", b"back_to_main")]
     ]
     await event.edit(
         "📋 **جلب البيانات**\n\n"
@@ -489,22 +543,22 @@ async def fetch_action_handler(event, action):
         return
 
     try:
-        if action == "fetch_channels":
+        if action == b"fetch_channels":
             await event.edit("📢 **جلب القنوات**\n\nجاري جلب القنوات...")
             channels = await fetch_channels(client)
             await send_large_list(event, channels, "القنوات المشتركة فيها")
 
-        elif action == "fetch_groups":
+        elif action == b"fetch_groups":
             await event.edit("👥 **جلب الجروبات**\n\nجاري جلب الجروبات...")
             groups = await fetch_groups(client)
             await send_large_list(event, groups, "الجروبات المشتركة فيها")
 
-        elif action == "fetch_bots":
+        elif action == b"fetch_bots":
             await event.edit("🤖 **جلب البوتات**\n\nجاري جلب البوتات...")
             bots = await fetch_bots(client)
             await send_large_list(event, bots, "البوتات التي كلمتها")
 
-        elif action == "fetch_all":
+        elif action == b"fetch_all":
             await event.edit("📋 **جلب الكل**\n\nجاري جلب جميع البيانات...")
             channels = await fetch_channels(client)
             groups = await fetch_groups(client)
@@ -576,10 +630,10 @@ async def send_large_text(event, text: str, title: str):
 
 async def auto_join_handler(event):
     keyboard = [
-        [{"text": "📢 انضمام للقنوات باليوزر", "callback": "join_channels_username"}],
-        [{"text": "👥 انضمام للجروبات برابط الدعوة", "callback": "join_groups_link"}],
-        [{"text": "🆔 انضمام بالايدي", "callback": "join_by_id"}],
-        [{"text": "🔙 رجوع", "callback": "back_to_main"}]
+        [Button.inline("📢 انضمام للقنوات باليوزر", b"join_channels_username")],
+        [Button.inline("👥 انضمام للجروبات برابط الدعوة", b"join_groups_link")],
+        [Button.inline("🆔 انضمام بالايدي", b"join_by_id")],
+        [Button.inline("🔙 رجوع", b"back_to_main")]
     ]
     await event.edit(
         "🔗 **الانضمام التلقائي**\n\n"
@@ -595,7 +649,7 @@ async def join_action_handler(event, action):
         return
 
     try:
-        if action == "join_channels_username":
+        if action == b"join_channels_username":
             await event.edit("📢 **انضمام للقنوات باليوزر**\n\n"
                            "يرجى إرسال يوزرات القنوات مفصولة بسطر جديد (مثال: channel1\nchannel2)")
 
@@ -619,7 +673,7 @@ async def join_action_handler(event, action):
 
             await event.edit(f"✅ تم الانضمام إلى {joined} قناة من {len(usernames)}")
 
-        elif action == "join_groups_link":
+        elif action == b"join_groups_link":
             await event.edit("👥 **انضمام للجروبات برابط الدعوة**\n\n"
                            "يرجى إرسال روابط الدعوة مفصولة بسطر جديد (مثال: https://t.me/joinchat/AAAAAE...\nhttps://t.me/...)")
 
@@ -650,7 +704,7 @@ async def join_action_handler(event, action):
 
             await event.edit(f"✅ تم الانضمام إلى {joined} مجموعة من {len(links)}")
 
-        elif action == "join_by_id":
+        elif action == b"join_by_id":
             await event.edit("🆔 **انضمام بالايدي**\n\n"
                            "يرجى إرسال ايدي الجروبات/القنوات مفصولة بسطر جديد (مثال: -100123456789\n-100987654321)")
 
@@ -724,7 +778,7 @@ async def account_info_handler(event):
     stats += f"القنوات المنضم إليها: {user['stats_joined_channels']}\n"
 
     keyboard = [
-        [{"text": "🔙 رجوع", "callback": "back_to_main"}]
+        [Button.inline("🔙 رجوع", b"back_to_main")]
     ]
 
     await event.edit(
@@ -736,14 +790,14 @@ async def account_info_handler(event):
 
 async def admin_panel_handler(event):
     keyboard = [
-        [{"text": "📊 إحصائيات المستخدمين", "callback": "admin_stats"}],
-        [{"text": "👥 عرض آخر 50 مستخدم", "callback": "admin_last_users"}],
-        [{"text": "🔍 بحث عن مستخدم", "callback": "admin_search_user"}],
-        [{"text": "⛔ حظر/فك حظر مستخدم", "callback": "admin_ban_user"}],
-        [{"text": "📢 إرسال رسالة للجميع", "callback": "admin_broadcast"}],
-        [{"text": "💾 سحب نسخة احتياطية", "callback": "admin_backup"}],
-        [{"text": "⚙️ إعدادات الاشتراك", "callback": "admin_subscription_settings"}],
-        [{"text": "🔙 رجوع", "callback": "back_to_main"}]
+        [Button.inline("📊 إحصائيات المستخدمين", b"admin_stats")],
+        [Button.inline("👥 عرض آخر 50 مستخدم", b"admin_last_users")],
+        [Button.inline("🔍 بحث عن مستخدم", b"admin_search_user")],
+        [Button.inline("⛔ حظر/فك حظر مستخدم", b"admin_ban_user")],
+        [Button.inline("📢 إرسال رسالة للجميع", b"admin_broadcast")],
+        [Button.inline("💾 سحب نسخة احتياطية", b"admin_backup")],
+        [Button.inline("⚙️ إعدادات الاشتراك", b"admin_subscription_settings")],
+        [Button.inline("🔙 رجوع", b"back_to_main")]
     ]
     await event.edit(
         "👑 **لوحة تحكم الأدمن**\n\n"
@@ -959,14 +1013,14 @@ async def admin_subscription_settings_handler(event):
 
     await event.edit(
         f"⚙️ **إعدادات الاشتراك**\n\n"
-        f"القناة المطلوبة: {settings['required_channel'] or 'غير محددة'}\n"
-        f"المجموعة المطلوبة: {settings['required_group'] or 'غير محددة'}\n\n"
+        f"القناة المطلوبة: @{settings['required_channel'] or 'غير محددة'}\n"
+        f"المجموعة المطلوبة: @{settings['required_group'] or 'غير محددة'}\n\n"
         "اختر الإعداد الذي تريد تعديله:",
         buttons=[
-            [{"text": "📢 تعيين القناة المطلوبة", "callback": "set_required_channel"}],
-            [{"text": "👥 تعيين المجموعة المطلوبة", "callback": "set_required_group"}],
-            [{"text": "🗑 مسح الإعدادات", "callback": "clear_subscription_settings"}],
-            [{"text": "🔙 رجوع", "callback": "admin_panel"}]
+            [Button.inline("📢 تعيين القناة المطلوبة", b"set_required_channel")],
+            [Button.inline("👥 تعيين المجموعة المطلوبة", b"set_required_group")],
+            [Button.inline("🗑 مسح الإعدادات", b"clear_subscription_settings")],
+            [Button.inline("🔙 رجوع", b"admin_panel")]
         ]
     )
 
