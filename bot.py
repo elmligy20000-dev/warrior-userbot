@@ -39,7 +39,7 @@ def main_menu():
         [Button.inline("إضافة حساب", b"add_account")],
         [Button.inline("قائمة التنظيف", b"clean_menu")],
         [Button.inline("المميزات", b"features")],
-        [Button.url("👨‍💻 المبرمك", f"https://t.me/{DEVELOPER}")]
+        [Button.url("👨‍💻 المبرمج", f"https://t.me/{DEVELOPER}")]
     ]
 
 def clean_menu_buttons():
