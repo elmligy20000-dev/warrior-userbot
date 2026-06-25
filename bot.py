@@ -63,9 +63,10 @@ logger = logging.getLogger(__name__)
 
 # Database setup
 def init_db():
-    conn = sqlite3.connect('bot_database.db')
+    conn = sqlite3.connect("bot_database.db")
     cursor = conn.cursor()
-    cursor.execute('''
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             username TEXT,
@@ -77,8 +78,9 @@ def init_db():
             join_date DATETIME DEFAULT CURRENT_TIMESTAMP,
             language_code TEXT DEFAULT 'ar'
         )
-    ''')
-    cursor.execute('''
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS numbers (
             number_id INTEGER PRIMARY KEY AUTOINCREMENT,
             number TEXT UNIQUE,
@@ -92,8 +94,9 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-    ''')
-    cursor.execute('''
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS payments (
             payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -106,36 +109,25 @@ def init_db():
             invoice_url TEXT,
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
-    ''')
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS payments (
-        payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        amount INTEGER,
-        crypto_amount REAL,
-        currency TEXT,
-        invoice_id TEXT UNIQUE,
-        status TEXT DEFAULT 'pending',
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        invoice_url TEXT,
-        FOREIGN KEY(user_id) REFERENCES users(user_id)
-    )
-''')
-    cursor.execute('''
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             channel_id INTEGER PRIMARY KEY,
             username TEXT,
             required INTEGER DEFAULT 1,
             title TEXT
         )
-    ''')
-    cursor.execute('''
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT
         )
-    ''')
-    cursor.execute('''
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS otp_requests (
             request_id INTEGER PRIMARY KEY AUTOINCREMENT,
             number_id INTEGER,
@@ -147,7 +139,10 @@ cursor.execute('''
             FOREIGN KEY(number_id) REFERENCES numbers(number_id),
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
-    ''')
+    """)
+
+    conn.commit()
+    conn.close()
     # Insert default settings
     cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ('min_deposit', '1'))
     cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ('crypto_bot_token', ''))
