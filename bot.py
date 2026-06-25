@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_ID = 20867472"
+API_ID = 20867472
 API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
 BOT_TOKEN = "8837648752:AAHICVc71aEknIjgrE_FoOH2nln7oEOSNUA"
 DEVELOPER = "Programmer_error"
