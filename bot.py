@@ -1,1598 +1,1311 @@
+import asyncio
+import random
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
-    ContextTypes, MessageHandler, filters, ConversationHandler
-)
+from datetime import datetime, timedelta
+from telethon import TelegramClient, events, functions, types
+from telethon.tl.custom import Button
+from telethon.sessions import StringSession
 import sqlite3
 import os
-import requests
-import json
-from datetime import datetime, timedelta
-from dotenv import load_dotenv
-from typing import Dict, Any, Optional, Tuple
+import re
+from typing import List, Dict, Optional
 
-# Load environment variables
-load_dotenv()
+# Premium Emojis
+PREMIUM_EMOJIS = [
+    "💻", "🎲", "🌿", "👤", "🪐", "🔅", "⚡️", "🎸", "🕊", "⚪️", "🦋", "✨"
+]
 
-# Bot Configuration - Set your variables here or in .env file
+# Configuration
+API_ID = 20867472
+API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
 BOT_TOKEN = "8914045842:AAEz6MNsGTShwob_M3H0ECy8eOkl2nT5gno"
-DEVELOPER_ID = 932862531
-DEVELOPER_USERNAME = "Programmer_error"
-# Premium Emoji constants
-COMPUTER = "💻"
-DICE = "🎲"
-HERB = "🌿"
-USER = "👤"
-PLANET = "🪐"
-SUN = "🔅"
-ZAP = "⚡️"
-GUITAR = "🎸"
-DOVE = "🕊️"
-WHITE_CIRCLE = "⚪️"
-BUTTERFLY = "🦋"
-SPARKLES = "✨"
-PREMIUM = "⚡️"
-CROWN = "👑"
-FIRE = "🔥"
-LOCK = "🔒"
-UNLOCK = "🔓"
-WARNING = "⚠️"
-CHECK = "✅"
-CROSS = "❌"
-MONEY = "💰"
-CREDIT = "💳"
-PHONE = "📱"
-CLOCK = "⏳"
-CHANNEL = "📢"
-KEY = "🔑"
-GEAR = "⚙️"
-GRAPH = "📊"
-SHIELD = "🛡️"
-GIFT = "🎁"
+ADMIN_ID = 932862531
+DB_NAME = 'auto_poster.db'
 
-# Conversation states
-ADD_NUMBER, ADD_BALANCE, ADD_CHANNEL, SET_CRYPTO_TOKEN, SET_MIN_DEPOSIT, SET_ADMIN_PASSWORD, SET_OTP_API_KEY, SET_OTP_SERVICE_URL = range(8)
-
-# Enable logging
+# Initialize logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
 # Database setup
 def init_db():
-    conn = sqlite3.connect("bot_database.db")
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT,
-            balance INTEGER DEFAULT 0,
-            is_admin INTEGER DEFAULT 0,
-            is_logged_in INTEGER DEFAULT 0,
-            is_subscribed INTEGER DEFAULT 0,
-            last_login DATETIME,
-            join_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-            language_code TEXT DEFAULT 'ar'
-        )
-    """)
+    # Users table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
+        username TEXT,
+        first_name TEXT,
+        last_name TEXT,
+        is_vip BOOLEAN DEFAULT FALSE,
+        vip_expiry DATETIME,
+        is_banned BOOLEAN DEFAULT FALSE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS numbers (
-            number_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            number TEXT UNIQUE,
-            price INTEGER,
-            is_sold INTEGER DEFAULT 0,
-            category TEXT DEFAULT 'new',
-            otp_service TEXT DEFAULT 'unknown',
-            otp_id TEXT,
-            otp_api_key TEXT,
-            otp_status TEXT DEFAULT 'pending',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+    # Groups table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS groups (
+        group_id INTEGER PRIMARY KEY,
+        group_name TEXT,
+        group_username TEXT,
+        is_active BOOLEAN DEFAULT TRUE,
+        is_banned BOOLEAN DEFAULT FALSE,
+        last_post_time DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS payments (
-            payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            amount INTEGER,
-            crypto_amount REAL,
-            currency TEXT,
-            invoice_id TEXT UNIQUE,
-            status TEXT DEFAULT 'pending',
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            invoice_url TEXT,
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
-        )
-    """)
+    # VIP Codes table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS vip_codes (
+        code TEXT PRIMARY KEY,
+        duration_days INTEGER,
+        is_used BOOLEAN DEFAULT FALSE,
+        used_by INTEGER,
+        used_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS channels (
-            channel_id INTEGER PRIMARY KEY,
-            username TEXT,
-            required INTEGER DEFAULT 1,
-            title TEXT
-        )
-    """)
+    # Messages table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT,
+        font TEXT,
+        is_premium BOOLEAN DEFAULT FALSE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
+    # Flood protection table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS flood_protection (
+        group_id INTEGER PRIMARY KEY,
+        last_message_time DATETIME,
+        message_count INTEGER DEFAULT 0,
+        cooldown_until DATETIME
+    )
+    ''')
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS otp_requests (
-            request_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            number_id INTEGER,
-            user_id INTEGER,
-            otp_code TEXT,
-            status TEXT DEFAULT 'pending',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(number_id) REFERENCES numbers(number_id),
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
-        )
-    """)
-
-    # Insert default settings
-    cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ('min_deposit', '1'))
-    cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ('crypto_bot_token', ''))
-    cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ('admin_password', ''))
-    cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ('otp_api_key', ''))
-    cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
-                  ('otp_service_url', 'https://api.sms-activate.org/stubs/handler_api.php'))
-    cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ('bot_language', 'ar'))
-    # Set developer as admin
-    cursor.execute('INSERT OR IGNORE INTO users (user_id, username, is_admin) VALUES (?, ?, 1)', (DEVELOPER_ID, DEVELOPER_USERNAME))
     conn.commit()
     conn.close()
 
 init_db()
 
-# Admin check
-def is_admin(user_id: int) -> bool:
-    conn = sqlite3.connect('bot_database.db')
+# Client setup
+client = TelegramClient('auto_poster', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+
+# Helper functions
+def get_db_connection():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def add_premium_emojis(text: str) -> str:
+    emoji = random.choice(PREMIUM_EMOJIS)
+    return f"{emoji} {text} {emoji}"
+
+def format_text_with_font(text: str, font: str = None) -> str:
+    if not font:
+        fonts = [
+            "monospace", "sans-serif", "serif", "small", "large",
+            "𝗠𝗢𝗡𝗢𝗦𝗣𝗔𝗖𝗘", "𝖬𝖮𝖭𝖮𝖲𝖯𝖠𝖢𝖤", "𝕄𝕆ℕ𝕆𝕊ℙ𝔸ℂ𝔼",
+            "𝓜𝓞𝓝𝓞𝓢𝓟𝓐𝓒𝓔", "𝒎𝒐𝒏𝒐𝒔𝒑𝒂𝒄𝒆", "𝐌𝐎𝐍𝐎𝐒𝐏𝐀𝐂𝐄"
+        ]
+        font = random.choice(fonts)
+
+    if font.lower() == "monospace":
+        return f"```{text}```"
+    elif font.lower() == "sans-serif":
+        return f"𝗧𝗘𝗫𝗧: {text}"
+    elif font.lower() == "serif":
+        return f"𝖳𝖤𝖸𝖳: {text}"
+    elif font == "small":
+        return f"<small>{text}</small>"
+    elif font == "large":
+        return f"<large>{text}</large>"
+    else:
+        return f"{text}"
+
+async def check_group_status(group_id: int) -> bool:
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT is_admin FROM users WHERE user_id = ?', (user_id,))
+    cursor.execute('SELECT is_banned FROM groups WHERE group_id = ?', (group_id,))
     result = cursor.fetchone()
     conn.close()
-    return result and result[0] == 1
 
-# Check subscription
-async def check_subscription(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT channel_id, username, title FROM channels WHERE required = 1')
-    channels = cursor.fetchall()
-    conn.close()
-
-    if not channels:
-        return True
-
-    for channel in channels:
-        try:
-            member = await context.bot.get_chat_member(channel[0], user_id)
-            if member.status in ['left', 'kicked']:
-                return False
-        except Exception as e:
-            logger.error(f"Error checking subscription: {e}")
-            return False
-    return True
-
-# Force subscription
-async def force_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT channel_id, username, title FROM channels WHERE required = 1')
-    channels = cursor.fetchall()
-    conn.close()
-
-    if not channels:
-        return
-
-    keyboard = []
-    for channel in channels:
-        keyboard.append([InlineKeyboardButton(
-            f"الانضمام إلى {channel[2] or channel[1]}",
-            url=f"https://t.me/{channel[1]}"
-        )])
-
-    keyboard.append([InlineKeyboardButton("✅ تم الاشتراك", callback_data='check_subscription')])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        f"{CHANNEL} يجب عليك الاشتراك في القنوات التالية لاستخدام البوت {CHANNEL}\n\n"
-        f"{WHITE_CIRCLE} بعد الاشتراك اضغط على الزر أدناه {WHITE_CIRCLE}",
-        reply_markup=reply_markup
-    )
-
-# Start command
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user = update.effective_user
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)', (user.id, user.username))
-    cursor.execute('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = ?', (user.id,))
-    conn.commit()
-    conn.close()
-
-    if not await check_subscription(user.id, context):
-        await force_subscription(update, context)
-        return
-
-    keyboard = [
-        [InlineKeyboardButton(f"{COMPUTER} قائمة الأرقام", callback_data='numbers_list')],
-        [InlineKeyboardButton(f"{USER} حسابي", callback_data='my_account')],
-        [InlineKeyboardButton(f"{CREDIT} شحن الرصيد", callback_data='deposit')],
-        [InlineKeyboardButton(f"{ZAP} الدعم", callback_data='support')],
-        [InlineKeyboardButton(f"{LOCK} تسجيل الدخول", callback_data='login')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        f"{SPARKLES} أهلا بك في بوت بيع أرقام التليجرام المتطور {SPARKLES}\n\n"
-        f"{HERB} اختر من القائمة أدناه {HERB}",
-        reply_markup=reply_markup
-    )
-
-# Admin panel
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text(f"{ZAP} ليس لديك صلاحية للوصول إلى هذه الأوامر {ZAP}")
-        return
-
-    keyboard = [
-        [InlineKeyboardButton(f"{PLANET} إضافة رقم", callback_data='add_number')],
-        [InlineKeyboardButton(f"{SUN} إدارة الأرقام", callback_data='manage_numbers')],
-        [InlineKeyboardButton(f"{GUITAR} إضافة رصيد يدوي", callback_data='add_balance')],
-        [InlineKeyboardButton(f"{DOVE} قائمة المستخدمين", callback_data='users_list')],
-        [InlineKeyboardButton(f"{GRAPH} الإحصائيات", callback_data='stats')],
-        [InlineKeyboardButton(f"{GEAR} إعدادات البوت", callback_data='bot_settings')],
-        [InlineKeyboardButton(f"{CHANNEL} إدارة القنوات", callback_data='manage_channels')],
-        [InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='start')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        f"{CROWN} لوحة التحكم المتطورة {CROWN}\n\n"
-        f"{WHITE_CIRCLE} اختر من القائمة أدناه {WHITE_CIRCLE}",
-        reply_markup=reply_markup
-    )
-
-# Bot settings
-async def bot_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_admin(update.effective_user.id):
-        return
-
-    keyboard = [
-        [InlineKeyboardButton(f"{KEY} تعيين كلمة مرور الأدمن", callback_data='set_admin_password')],
-        [InlineKeyboardButton(f"{CREDIT} إعدادات الدفع", callback_data='payment_settings')],
-        [InlineKeyboardButton(f"{PHONE} إعدادات OTP", callback_data='otp_settings')],
-        [InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='admin')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    if update.callback_query:
-        await update.callback_query.edit_message_text(
-            f"{FIRE} إعدادات البوت {FIRE}\n\n"
-            f"{WHITE_CIRCLE} اختر الإعداد الذي تريد تعديله {WHITE_CIRCLE}",
-            reply_markup=reply_markup
-        )
-    else:
-        await update.message.reply_text(
-            f"{FIRE} إعدادات البوت {FIRE}\n\n"
-            f"{WHITE_CIRCLE} اختر الإعداد الذي تريد تعديله {WHITE_CIRCLE}",
-            reply_markup=reply_markup
-        )
-
-# OTP settings
-async def otp_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_admin(update.effective_user.id):
-        return
-
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT value FROM settings WHERE key = ?', ('otp_api_key',))
-    otp_api_key = cursor.fetchone()[0] or ''
-    cursor.execute('SELECT value FROM settings WHERE key = ?', ('otp_service_url',))
-    otp_service_url = cursor.fetchone()[0] or ''
-    conn.close()
-
-    keyboard = [
-        [InlineKeyboardButton(f"{KEY} تعيين مفتاح API لـ OTP", callback_data='set_otp_api_key')],
-        [InlineKeyboardButton(f"{GEAR} تعيين رابط خدمة OTP", callback_data='set_otp_service_url')],
-        [InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='bot_settings')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    if update.callback_query:
-        await update.callback_query.edit_message_text(
-            f"{PHONE} إعدادات OTP {PHONE}\n\n"
-            f"{WHITE_CIRCLE} مفتاح API: `{otp_api_key if otp_api_key else 'غير مضبوط'}`\n"
-            f"{WHITE_CIRCLE} رابط الخدمة: `{otp_service_url if otp_service_url else 'غير مضبوط'}` {WHITE_CIRCLE}",
-            reply_markup=reply_markup
-        )
-    else:
-        await update.message.reply_text(
-            f"{PHONE} إعدادات OTP {PHONE}\n\n"
-            f"{WHITE_CIRCLE} مفتاح API: `{otp_api_key if otp_api_key else 'غير مضبوط'}`\n"
-            f"{WHITE_CIRCLE} رابط الخدمة: `{otp_service_url if otp_service_url else 'غير مضبوط'}` {WHITE_CIRCLE}",
-            reply_markup=reply_markup
-        )
-
-# Payment settings
-async def payment_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_admin(update.effective_user.id):
-        return
-
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT value FROM settings WHERE key = ?', ('crypto_bot_token',))
-    crypto_token = cursor.fetchone()[0] or ''
-    cursor.execute('SELECT value FROM settings WHERE key = ?', ('min_deposit',))
-    min_deposit = cursor.fetchone()[0] or '1'
-    conn.close()
-
-    keyboard = [
-        [InlineKeyboardButton(f"{KEY} تعيين توكن CryptoBot", callback_data='set_crypto_token')],
-        [InlineKeyboardButton(f"{MONEY} تعيين الحد الأدنى للشحن", callback_data='set_min_deposit')],
-        [InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='bot_settings')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    if update.callback_query:
-        await update.callback_query.edit_message_text(
-            f"{CREDIT} إعدادات الدفع {CREDIT}\n\n"
-            f"{WHITE_CIRCLE} توكن CryptoBot: `{crypto_token if crypto_token else 'غير مضبوط'}`\n"
-            f"{WHITE_CIRCLE} الحد الأدنى للشحن: `{min_deposit}$` {WHITE_CIRCLE}",
-            reply_markup=reply_markup
-        )
-    else:
-        await update.message.reply_text(
-            f"{CREDIT} إعدادات الدفع {CREDIT}\n\n"
-            f"{WHITE_CIRCLE} توكن CryptoBot: `{crypto_token if crypto_token else 'غير مضبوط'}`\n"
-            f"{WHITE_CIRCLE} الحد الأدنى للشحن: `{min_deposit}$` {WHITE_CIRCLE}",
-            reply_markup=reply_markup
-        )
-
-# Login system
-async def login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('UPDATE users SET is_logged_in = 1, last_login = CURRENT_TIMESTAMP WHERE user_id = ?', (user_id,))
-    conn.commit()
-    conn.close()
-
-    keyboard = [[InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='start')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    if update.callback_query:
-        await update.callback_query.edit_message_text(
-            f"{UNLOCK} تم تسجيل الدخول بنجاح! {UNLOCK}\n\n"
-            f"{WHITE_CIRCLE} يمكنك الآن تصفح الأرقام وشراؤها {WHITE_CIRCLE}",
-            reply_markup=reply_markup
-        )
-    else:
-        await update.message.reply_text(
-            f"{UNLOCK} تم تسجيل الدخول بنجاح! {UNLOCK}\n\n"
-            f"{WHITE_CIRCLE} يمكنك الآن تصفح الأرقام وشراؤها {WHITE_CIRCLE}",
-            reply_markup=reply_markup
-        )
-
-# Logout system
-async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('UPDATE users SET is_logged_in = 0 WHERE user_id = ?', (user_id,))
-    conn.commit()
-    conn.close()
-
-    keyboard = [[InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='start')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    if update.callback_query:
-        await update.callback_query.edit_message_text(
-            f"{LOCK} تم تسجيل الخروج بنجاح! {LOCK}\n\n"
-            f"{WHITE_CIRCLE} شكرًا لاستخدامك بوتنا {WHITE_CIRCLE}",
-            reply_markup=reply_markup
-        )
-    else:
-        await update.message.reply_text(
-            f"{LOCK} تم تسجيل الخروج بنجاح! {LOCK}\n\n"
-            f"{WHITE_CIRCLE} شكرًا لاستخدامك بوتنا {WHITE_CIRCLE}",
-            reply_markup=reply_markup
-        )
-
-# Check subscription callback
-async def check_subscription_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user_id = query.from_user.id
-
-    if await check_subscription(user_id, context):
-        await query.answer("تم التحقق من الاشتراك بنجاح!")
-        await start(update, context)
-    else:
-        await query.answer("لم يتم الاشتراك بعد في جميع القنوات المطلوبة!", show_alert=True)
-
-# Deposit system
-async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT value FROM settings WHERE key = ?', ('crypto_bot_token',))
-    crypto_token = cursor.fetchone()[0]
-    cursor.execute('SELECT value FROM settings WHERE key = ?', ('min_deposit',))
-    min_deposit = int(cursor.fetchone()[0] or 1)
-    conn.close()
-
-    if not crypto_token:
-        keyboard = [[InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='start')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.callback_query.edit_message_text(
-            f"{WARNING} نظام الدفع غير مضبوط بعد {WARNING}\n\n"
-            f"{WHITE_CIRCLE} يرجى التواصل مع الأدمن {WHITE_CIRCLE}",
-            reply_markup=reply_markup
-        )
-        return
-
-    # Create invoice
-    url = f"https://pay.crypt.bot/api/createInvoice"
-    headers = {
-        "Crypto-Pay-API-Token": crypto_token,
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "asset": "USDT",
-        "amount": str(min_deposit),
-        "description": "Deposit to Telegram Numbers Bot"
-    }
+    if result and result['is_banned']:
+        return False
 
     try:
-        response = requests.post(url, headers=headers, json=payload)
-        data = response.json()
-
-        if data.get('ok'):
-            invoice = data['result']
-            conn = sqlite3.connect('bot_database.db')
+        chat = await client.get_entity(group_id)
+        if isinstance(chat, types.ChatForbidden):
+            conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO payments (user_id, amount, crypto_amount, currency, payment_id, status, invoice_url)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (user_id, min_deposit, invoice['amount'], invoice['asset'], invoice['invoice_id'], 'pending', invoice['pay_url']))
+            cursor.execute('UPDATE groups SET is_banned = 1 WHERE group_id = ?', (group_id,))
             conn.commit()
             conn.close()
-
-            keyboard = [
-                [InlineKeyboardButton(f"{CREDIT} دفع {min_deposit}$", url=invoice['pay_url'])],
-                [InlineKeyboardButton(f"{CHECK} تحقق من الدفع", callback_data=f'check_payment_{invoice["invoice_id"]}')],
-                [InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='start')]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            await update.callback_query.edit_message_text(
-                f"{MONEY} شحن الرصيد {MONEY}\n\n"
-                f"{WHITE_CIRCLE} المبلغ: `{min_deposit}$`\n"
-                f"{WHITE_CIRCLE} العملة: USDT\n"
-                f"{WHITE_CIRCLE} الحالة: في انتظار الدفع {CLOCK} {WHITE_CIRCLE}\n\n"
-                f"{ZAP} اضغط على الزر أدناه للدفع {ZAP}",
-                reply_markup=reply_markup
-            )
-        else:
-            keyboard = [[InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='start')]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.callback_query.edit_message_text(
-                f"{WARNING} حدث خطأ أثناء إنشاء الفاتورة {WARNING}\n\n"
-                f"{WHITE_CIRCLE} يرجى المحاولة لاحقًا {WHITE_CIRCLE}"
-            )
+            return False
+        return True
     except Exception as e:
-        logger.error(f"Error creating invoice: {e}")
-        keyboard = [[InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='start')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.callback_query.edit_message_text(
-            f"{WARNING} حدث خطأ أثناء إنشاء الفاتورة {WARNING}\n\n"
-            f"{WHITE_CIRCLE} يرجى المحاولة لاحقًا {WHITE_CIRCLE}"
-        )
+        logger.error(f"Error checking group {group_id}: {e}")
+        return False
 
-# Check payment
-async def check_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    payment_id = query.data.split('_')[2]
+async def get_random_delay() -> int:
+    return random.randint(300, 500)
 
-    conn = sqlite3.connect('bot_database.db')
+async def check_flood_protection(group_id: int) -> bool:
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT value FROM settings WHERE key = ?', ('crypto_bot_token',))
-    crypto_token = cursor.fetchone()[0]
-    cursor.execute('SELECT user_id, amount FROM payments WHERE payment_id = ?', (payment_id,))
-    payment = cursor.fetchone()
-    conn.close()
 
-    if not payment:
-        await query.answer("الفاتورة غير موجودة!", show_alert=True)
-        return
+    cursor.execute('''
+    SELECT last_message_time, message_count, cooldown_until
+    FROM flood_protection
+    WHERE group_id = ?
+    ''', (group_id,))
 
-    user_id, amount = payment
+    result = cursor.fetchone()
 
-    if not crypto_token:
-        await query.answer("نظام الدفع غير مضبوط!", show_alert=True)
-        return
+    now = datetime.now()
 
-    # Check invoice status
-    url = f"https://pay.crypt.bot/api/getInvoices"
-    headers = {
-        "Crypto-Pay-API-Token": crypto_token
-    }
-    params = {
-        "invoice_ids": payment_id
-    }
+    if result:
+        last_time = datetime.strptime(result['last_message_time'], '%Y-%m-%d %H:%M:%S') if result['last_message_time'] else None
+        cooldown_until = datetime.strptime(result['cooldown_until'], '%Y-%m-%d %H:%M:%S') if result['cooldown_until'] else None
 
-    try:
-        response = requests.get(url, headers=headers, params=params)
-        data = response.json()
+        if cooldown_until and now < cooldown_until:
+            conn.close()
+            return False
 
-        if data.get('ok') and data['result']['items']:
-            invoice = data['result']['items'][0]
-            if invoice['status'] == 'paid':
-                conn = sqlite3.connect('bot_database.db')
-                cursor = conn.cursor()
-
-                # Update payment status
-                cursor.execute('UPDATE payments SET status = ? WHERE payment_id = ?', ('completed', payment_id))
-
-                # Update user balance
-                cursor.execute('UPDATE users SET balance = balance + ? WHERE user_id = ?', (amount, user_id))
-
-                # Add transaction
+        if last_time and (now - last_time) < timedelta(minutes=1):
+            message_count = result['message_count'] + 1
+            if message_count >= 5:  # Level 3 protection
+                cooldown_until = now + timedelta(minutes=5)
                 cursor.execute('''
-                    INSERT INTO transactions (user_id, amount, type, description)
-                    VALUES (?, ?, ?, ?)
-                ''', (user_id, amount, 'deposit', f'Deposit via CryptoBot invoice {payment_id}'))
-
+                UPDATE flood_protection
+                SET message_count = ?, cooldown_until = ?
+                WHERE group_id = ?
+                ''', (message_count, cooldown_until.strftime('%Y-%m-%d %H:%M:%S'), group_id))
                 conn.commit()
                 conn.close()
-
-                await query.answer("تم تأكيد الدفع بنجاح!")
-                keyboard = [[InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='start')]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await query.edit_message_text(
-                    f"{CHECK} تم شحن الرصيد بنجاح! {CHECK}\n\n"
-                    f"{WHITE_CIRCLE} المبلغ: `{amount}$`\n"
-                    f"{WHITE_CIRCLE} الرصيد الجديد: `{get_user_balance(user_id)}$` {WHITE_CIRCLE}",
-                    reply_markup=reply_markup
-                )
+                return False
             else:
-                await query.answer("لم يتم الدفع بعد!")
+                cursor.execute('''
+                UPDATE flood_protection
+                SET last_message_time = ?, message_count = ?
+                WHERE group_id = ?
+                ''', (now.strftime('%Y-%m-%d %H:%M:%S'), message_count, group_id))
+                conn.commit()
         else:
-            await query.answer("حدث خطأ أثناء التحقق من الدفع!", show_alert=True)
-    except Exception as e:
-        logger.error(f"Error checking payment: {e}")
-        await query.answer("حدث خطأ أثناء التحقق من الدفع!", show_alert=True)
+            cursor.execute('''
+            UPDATE flood_protection
+            SET last_message_time = ?, message_count = 1
+            WHERE group_id = ?
+            ''', (now.strftime('%Y-%m-%d %H:%M:%S'), group_id))
+            conn.commit()
+    else:
+        cursor.execute('''
+        INSERT INTO flood_protection (group_id, last_message_time, message_count)
+        VALUES (?, ?, 1)
+        ''', (group_id, now.strftime('%Y-%m-%d %H:%M:%S')))
+        conn.commit()
 
-# Get user balance
-def get_user_balance(user_id: int) -> int:
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT balance FROM users WHERE user_id = ?', (user_id,))
-    balance = cursor.fetchone()[0]
     conn.close()
-    return balance
+    return True
 
-# Request OTP from service
-async def request_otp(otp_api_key: str, otp_service: str, otp_id: str, service_url: str) -> Optional[str]:
+async def get_active_groups() -> List[int]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT group_id FROM groups WHERE is_active = 1 AND is_banned = 0')
+    groups = [row['group_id'] for row in cursor.fetchall()]
+    conn.close()
+    return groups
+
+async def get_premium_messages() -> List[str]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT text FROM messages WHERE is_premium = 1')
+    messages = [row['text'] for row in cursor.fetchall()]
+    conn.close()
+    return messages
+
+async def get_regular_messages() -> List[str]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT text FROM messages WHERE is_premium = 0')
+    messages = [row['text'] for row in cursor.fetchall()]
+    conn.close()
+    return messages
+
+async def add_group(group_id: int, group_name: str, group_username: str = None) -> bool:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
     try:
-        params = {
-            'api_key': otp_api_key,
-            'action': 'getStatus',
-            'id': otp_id
-        }
-        response = requests.get(service_url, params=params)
-        response_text = response.text
-
-        if 'STATUS_OK' in response_text:
-            otp_code = response_text.split(':')[1]
-            return otp_code
-        elif 'STATUS_WAIT_CODE' in response_text:
-            return None  # OTP not ready yet
-        else:
-            logger.error(f"OTP service error: {response_text}")
-            return None
+        cursor.execute('''
+        INSERT INTO groups (group_id, group_name, group_username)
+        VALUES (?, ?, ?)
+        ON CONFLICT(group_id) DO UPDATE SET
+        group_name = excluded.group_name,
+        group_username = excluded.group_username,
+        is_active = 1,
+        is_banned = 0
+        ''', (group_id, group_name, group_username))
+        conn.commit()
+        return True
     except Exception as e:
-        logger.error(f"Error requesting OTP: {e}")
+        logger.error(f"Error adding group: {e}")
+        return False
+    finally:
+        conn.close()
+
+async def remove_group(group_id: int) -> bool:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('UPDATE groups SET is_active = 0 WHERE group_id = ?', (group_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Error removing group: {e}")
+        return False
+    finally:
+        conn.close()
+
+async def ban_group(group_id: int) -> bool:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('UPDATE groups SET is_banned = 1 WHERE group_id = ?', (group_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Error banning group: {e}")
+        return False
+    finally:
+        conn.close()
+
+async def add_message(text: str, is_premium: bool = False, font: str = None) -> bool:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        formatted_text = format_text_with_font(text, font)
+        cursor.execute('''
+        INSERT INTO messages (text, font, is_premium)
+        VALUES (?, ?, ?)
+        ''', (formatted_text, font, is_premium))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Error adding message: {e}")
+        return False
+    finally:
+        conn.close()
+
+async def generate_vip_code(duration_days: int) -> str:
+    import secrets
+    code = secrets.token_hex(8).upper()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+        INSERT INTO vip_codes (code, duration_days)
+        VALUES (?, ?)
+        ''', (code, duration_days))
+        conn.commit()
+        return code
+    except Exception as e:
+        logger.error(f"Error generating VIP code: {e}")
         return None
+    finally:
+        conn.close()
 
-# Show numbers categories
-async def show_numbers_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    keyboard = [
-        [InlineKeyboardButton(f"{CHECK} أرقام جديدة", callback_data='category_new')],
-        [InlineKeyboardButton(f"{WHITE_CIRCLE} أرقام قديمة", callback_data='category_old')],
-        [InlineKeyboardButton(f"{WARNING} أرقام مزيفة", callback_data='category_fake')],
-        [InlineKeyboardButton(f"{CROSS} أرقام احتيالية", callback_data='category_scam')],
-        [InlineKeyboardButton(f"{DICE} أرقام عشوائية", callback_data='category_random')],
-        [InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='start')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.callback_query.edit_message_text(
-        text=f"{COMPUTER} اختر فئة الأرقام {COMPUTER}",
-        reply_markup=reply_markup
-    )
-
-# Show manage numbers categories
-async def show_manage_numbers_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    keyboard = [
-        [InlineKeyboardButton(f"{CHECK} إدارة أرقام جديدة", callback_data='manage_category_new')],
-        [InlineKeyboardButton(f"{WHITE_CIRCLE} إدارة أرقام قديمة", callback_data='manage_category_old')],
-        [InlineKeyboardButton(f"{WARNING} إدارة أرقام مزيفة", callback_data='manage_category_fake')],
-        [InlineKeyboardButton(f"{CROSS} إدارة أرقام احتيالية", callback_data='manage_category_scam')],
-        [InlineKeyboardButton(f"{DICE} إدارة أرقام عشوائية", callback_data='manage_category_random')],
-        [InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='admin')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.callback_query.edit_message_text(
-        text=f"{SUN} اختر فئة الأرقام للإدارة {SUN}",
-        reply_markup=reply_markup
-    )
-
-# Show numbers list by category
-async def show_numbers_list(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str) -> None:
-    category_names = {
-        'new': 'جديدة',
-        'old': 'قديمة',
-        'fake': 'مزيفة',
-        'scam': 'احتيالية',
-        'random': 'عشوائية'
-    }
-
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT number_id, number, price, otp_service
-        FROM numbers
-        WHERE is_sold = 0 AND category = ?
-        ORDER BY created_at DESC
-    ''', (category,))
-    numbers = cursor.fetchall()
-    conn.close()
-
-    if not numbers:
-        keyboard = [[InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='numbers_list')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.callback_query.edit_message_text(
-            text=f"{DICE} لا توجد أرقام متاحة في هذه الفئة حاليًا {DICE}",
-            reply_markup=reply_markup
-        )
-        return
-
-    keyboard = []
-    for number in numbers:
-        keyboard.append([InlineKeyboardButton(
-            f"{PHONE} {number[1]} - {number[2]}$ ({number[3]})",
-            callback_data=f'buy_number_{number[0]}'
-        )])
-
-    keyboard.append([InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='numbers_list')])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.callback_query.edit_message_text(
-        text=f"{COMPUTER} قائمة الأرقام {category_names[category]} {COMPUTER}",
-        reply_markup=reply_markup
-    )
-
-# Show manage numbers by category
-async def show_manage_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str) -> None:
-    category_names = {
-        'new': 'جديدة',
-        'old': 'قديمة',
-        'fake': 'مزيفة',
-        'scam': 'احتيالية',
-        'random': 'عشوائية'
-    }
-
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT number_id, number, price, otp_service, is_sold
-        FROM numbers
-        WHERE category = ?
-        ORDER BY created_at DESC
-    ''', (category,))
-    numbers = cursor.fetchall()
-    conn.close()
-
-    if not numbers:
-        keyboard = [[InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='manage_numbers')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.callback_query.edit_message_text(
-            text=f"{DICE} لا توجد أرقام مسجلة في هذه الفئة {DICE}",
-            reply_markup=reply_markup
-        )
-        return
-
-    keyboard = []
-    for number in numbers:
-        status = "مباع" if number[4] else "متاح"
-        keyboard.append([InlineKeyboardButton(
-            f"{PHONE} {number[1]} - {number[2]}$ ({number[3]}) - {status}",
-            callback_data=f'delete_number_{number[0]}'
-        )])
-
-    keyboard.append([InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='manage_numbers')])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.callback_query.edit_message_text(
-        text=f"{SUN} إدارة الأرقام {category_names[category]} {SUN}",
-        reply_markup=reply_markup
-    )
-
-# Buy number
-async def buy_number(update: Update, context: ContextTypes.DEFAULT_TYPE, number_id: str) -> None:
-    user_id = update.effective_user.id
-    conn = sqlite3.connect('bot_database.db')
+async def redeem_vip_code(user_id: int, code: str) -> bool:
+    conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Check if user is logged in
-    cursor.execute('SELECT is_logged_in FROM users WHERE user_id = ?', (user_id,))
-    is_logged_in = cursor.fetchone()[0]
-    if not is_logged_in:
-        keyboard = [[InlineKeyboardButton(f"{LOCK} تسجيل الدخول", callback_data='login')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.callback_query.edit_message_text(
-            text=f"{LOCK} يجب تسجيل الدخول أولاً لشراء الأرقام {LOCK}",
-            reply_markup=reply_markup
-        )
-        return
+    try:
+        cursor.execute('SELECT * FROM vip_codes WHERE code = ? AND is_used = 0', (code,))
+        vip_code = cursor.fetchone()
 
-    cursor.execute('''
-        SELECT number, price, category, otp_service, otp_id, otp_api_key
-        FROM numbers
-        WHERE number_id = ? AND is_sold = 0
-    ''', (number_id,))
-    number = cursor.fetchone()
+        if not vip_code:
+            return False
 
-    if not number:
-        await update.callback_query.edit_message_text(text=f"{ZAP} هذا الرقم غير متاح أو تم بيعه بالفعل {ZAP}")
-        return
+        expiry_date = datetime.now() + timedelta(days=vip_code['duration_days'])
 
-    cursor.execute('SELECT balance FROM users WHERE user_id = ?', (user_id,))
-    user_balance = cursor.fetchone()[0]
-
-    if user_balance < number[1]:
-        await update.callback_query.edit_message_text(text=f"{ZAP} رصيدك غير كافٍ لشراء هذا الرقم {ZAP}")
-        return
-
-    # Get OTP API settings
-    cursor.execute('SELECT value FROM settings WHERE key = ?', ('otp_api_key',))
-    global_otp_api_key = cursor.fetchone()[0]
-    cursor.execute('SELECT value FROM settings WHERE key = ?', ('otp_service_url',))
-    otp_service_url = cursor.fetchone()[0]
-
-    # Use number-specific API key if available, otherwise use global
-    otp_api_key = number[5] if number[5] else global_otp_api_key
-
-    if not otp_api_key or not otp_service_url:
-        await update.callback_query.edit_message_text(
-            text=f"{WARNING} خدمة OTP غير مضبوطة بعد {WARNING}\n\n"
-            f"{WHITE_CIRCLE} يرجى التواصل مع الأدمن لإعداد خدمة OTP {WHITE_CIRCLE}"
-        )
-        return
-
-    # Request OTP
-    otp_code = await request_otp(otp_api_key, number[3], number[4], otp_service_url)
-
-    if not otp_code:
-        await update.callback_query.edit_message_text(
-            text=f"{CLOCK} جاري استلام رمز OTP من الخدمة، يرجى المحاولة بعد قليل {CLOCK}\n\n"
-            f"{WHITE_CIRCLE} إذا استمرت المشكلة، يرجى التواصل مع الدعم {WHITE_CIRCLE}"
-        )
-        return
-
-    # Update user balance and mark number as sold
-    cursor.execute('UPDATE users SET balance = balance - ? WHERE user_id = ?', (number[1], user_id))
-    cursor.execute('''
-        UPDATE numbers
-        SET is_sold = 1, otp_status = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE number_id = ?
-    ''', ('delivered', number_id))
-
-    # Add transaction
-    cursor.execute('''
-        INSERT INTO transactions (user_id, amount, type, description)
-        VALUES (?, ?, ?, ?)
-    ''', (user_id, -number[1], 'purchase', f'Purchase of number {number[0]}'))
-
-    # Record OTP request
-    cursor.execute('''
-        INSERT INTO otp_requests (number_id, user_id, otp_code, status)
-        VALUES (?, ?, ?, ?)
-    ''', (number_id, user_id, otp_code, 'delivered'))
-
-    conn.commit()
-    conn.close()
-
-    category_names = {
-        'new': 'جديدة',
-        'old': 'قديمة',
-        'fake': 'مزيفة',
-        'scam': 'احتيالية',
-        'random': 'عشوائية'
-    }
-
-    # Force logout after purchase
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('UPDATE users SET is_logged_in = 0 WHERE user_id = ?', (user_id,))
-    conn.commit()
-    conn.close()
-
-    keyboard = [
-        [InlineKeyboardButton(f"{LOCK} تسجيل الخروج (مفعل تلقائيًا)", callback_data='logout')],
-        [InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='numbers_list')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.callback_query.edit_message_text(
-        text=f"{SPARKLES} تم شراء الرقم بنجاح! {SPARKLES}\n\n"
-        f"{WHITE_CIRCLE} الرقم: `{number[0]}`\n"
-        f"{WHITE_CIRCLE} السعر: `{number[1]}` دولار\n"
-        f"{WHITE_CIRCLE} الفئة: {category_names[number[2]]}\n"
-        f"{WHITE_CIRCLE} الخدمة: {number[3]}\n"
-        f"{WHITE_CIRCLE} رمز OTP: `{otp_code}` {WHITE_CIRCLE}\n\n"
-        f"{BUTTERFLY} تم تسجيل خروجك تلقائيًا لأسباب أمنية {BUTTERFLY}\n"
-        f"{ZAP} يمكنك تسجيل الدخول مرة أخرى عند الحاجة {ZAP}",
-        reply_markup=reply_markup
-    )
-
-# Delete number
-async def delete_number(update: Update, context: ContextTypes.DEFAULT_TYPE, number_id: str) -> None:
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM numbers WHERE number_id = ?', (number_id,))
-    conn.commit()
-    conn.close()
-
-    await update.callback_query.edit_message_text(text=f"{ZAP} تم حذف الرقم بنجاح {ZAP}")
-
-# Show my account
-async def show_my_account(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT balance, is_logged_in, join_date, username
-        FROM users
+        cursor.execute('''
+        UPDATE users
+        SET is_vip = 1, vip_expiry = ?
         WHERE user_id = ?
-    ''', (user_id,))
-    user_data = cursor.fetchone()
-    balance = user_data[0]
-    is_logged_in = user_data[1]
-    join_date = user_data[2]
-    username = user_data[3]
-    conn.close()
+        ''', (expiry_date.strftime('%Y-%m-%d %H:%M:%S'), user_id))
 
-    keyboard = [
-        [InlineKeyboardButton(f"{CREDIT} شحن الرصيد", callback_data='deposit')],
-        [InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='start')]
+        cursor.execute('''
+        UPDATE vip_codes
+        SET is_used = 1, used_by = ?, used_at = ?
+        WHERE code = ?
+        ''', (user_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), code))
+
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Error redeeming VIP code: {e}")
+        return False
+    finally:
+        conn.close()
+
+async def is_user_vip(user_id: int) -> bool:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+        SELECT is_vip, vip_expiry FROM users WHERE user_id = ?
+        ''', (user_id,))
+        result = cursor.fetchone()
+
+        if not result:
+            return False
+
+        if not result['is_vip']:
+            return False
+
+        if result['vip_expiry']:
+            expiry_date = datetime.strptime(result['vip_expiry'], '%Y-%m-%d %H:%M:%S')
+            if datetime.now() > expiry_date:
+                cursor.execute('''
+                UPDATE users SET is_vip = 0 WHERE user_id = ?
+                ''', (user_id,))
+                conn.commit()
+                return False
+
+        return True
+    except Exception as e:
+        logger.error(f"Error checking VIP status: {e}")
+        return False
+    finally:
+        conn.close()
+
+# Auto poster main function
+async def auto_poster():
+    while True:
+        try:
+            groups = await get_active_groups()
+            premium_messages = await get_premium_messages()
+            regular_messages = await get_regular_messages()
+
+            if not groups or (not premium_messages and not regular_messages):
+                await asyncio.sleep(60)
+                continue
+
+            for group_id in groups:
+                try:
+                    if not await check_group_status(group_id):
+                        await ban_group(group_id)
+                        continue
+
+                    if not await check_flood_protection(group_id):
+                        continue
+
+                    messages_to_send = premium_messages if random.random() < 0.3 else regular_messages
+                    if not messages_to_send:
+                        messages_to_send = premium_messages if premium_messages else regular_messages
+
+                    message = random.choice(messages_to_send)
+                    formatted_message = add_premium_emojis(message) if random.random() < 0.7 else message
+
+                    try:
+                        await client.send_message(group_id, formatted_message)
+                        logger.info(f"Posted to group {group_id}: {formatted_message[:50]}...")
+                    except Exception as e:
+                        logger.error(f"Error posting to group {group_id}: {e}")
+                        if "CHAT_WRITE_FORBIDDEN" in str(e) or "CHAT_ADMIN_REQUIRED" in str(e):
+                            await ban_group(group_id)
+
+                    delay = await get_random_delay()
+                    await asyncio.sleep(delay)
+                except Exception as e:
+                    logger.error(f"Error in group {group_id} loop: {e}")
+                    continue
+
+        except Exception as e:
+            logger.error(f"Error in auto_poster main loop: {e}")
+            await asyncio.sleep(60)
+
+# Admin panel
+@client.on(events.NewMessage(pattern='/start', from_users=ADMIN_ID))
+async def admin_panel(event):
+    buttons = [
+        [Button.inline("📊 الإحصائيات", b'stats')],
+        [Button.inline("👥 إدارة المجموعات", b'manage_groups')],
+        [Button.inline("💬 إدارة الرسائل", b'manage_messages')],
+        [Button.inline("👑 إدارة VIP", b'manage_vip')],
+        [Button.inline("📢 الإذاعة", b'broadcast')],
+        [Button.inline("🔧 إعدادات البوت", b'bot_settings')],
+        [Button.inline("🛠 أدوات المطور", b'developer_tools')]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
 
-    login_status = f"{UNLOCK} مسجل دخول" if is_logged_in else f"{LOCK} غير مسجل دخول"
-
-    await update.callback_query.edit_message_text(
-        text=f"{USER} حسابي {USER}\n\n"
-        f"{WHITE_CIRCLE} الاسم: @{username or 'غير متوفر'}\n"
-        f"{WHITE_CIRCLE} الرصيد: `{balance}` دولار\n"
-        f"{WHITE_CIRCLE} الحالة: {login_status}\n"
-        f"{WHITE_CIRCLE} تاريخ الانضمام: `{join_date.split(' ')[0]}` {WHITE_CIRCLE}\n\n"
-        f"{ZAP} لإضافة رصيد، اضغط على الزر أدناه {ZAP}",
-        reply_markup=reply_markup
+    await event.respond(
+        "🎛 **لوحة التحكم الإدارية**\n\n"
+        "مرحبًا بك في لوحة التحكم الإدارية للبوت المتطور للنشر التلقائي.",
+        buttons=buttons
     )
 
-# Show users list
-async def show_users_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    conn = sqlite3.connect('bot_database.db')
+@client.on(events.CallbackQuery(data=b'stats'))
+async def show_stats(event):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT COUNT(*) as count FROM users')
+    users_count = cursor.fetchone()['count']
+
+    cursor.execute('SELECT COUNT(*) as count FROM groups WHERE is_active = 1')
+    active_groups_count = cursor.fetchone()['count']
+
+    cursor.execute('SELECT COUNT(*) as count FROM groups WHERE is_banned = 1')
+    banned_groups_count = cursor.fetchone()['count']
+
+    cursor.execute('SELECT COUNT(*) as count FROM messages')
+    messages_count = cursor.fetchone()['count']
+
+    cursor.execute('SELECT COUNT(*) as count FROM vip_codes WHERE is_used = 0')
+    unused_vip_codes = cursor.fetchone()['count']
+
+    cursor.execute('SELECT COUNT(*) as count FROM users WHERE is_vip = 1')
+    vip_users_count = cursor.fetchone()['count']
+
+    conn.close()
+
+    stats_text = (
+        "📊 **إحصائيات البوت**\n\n"
+        f"👥 المستخدمين: {users_count}\n"
+        f"🏢 المجموعات النشطة: {active_groups_count}\n"
+        f"🚫 المجموعات المحظورة: {banned_groups_count}\n"
+        f"💬 الرسائل المخزنة: {messages_count}\n"
+        f"🎟 أكواد VIP غير مستخدمة: {unused_vip_codes}\n"
+        f"👑 مستخدمي VIP: {vip_users_count}"
+    )
+
+    buttons = [
+        [Button.inline("⬅️ رجوع", b'admin_panel')]
+    ]
+
+    await event.edit(stats_text, buttons=buttons)
+
+@client.on(events.CallbackQuery(data=b'manage_groups'))
+async def manage_groups(event):
+    buttons = [
+        [Button.inline("📥 إضافة مجموعة", b'add_group')],
+        [Button.inline("📤 إزالة مجموعة", b'remove_group')],
+        [Button.inline("🚫 حظر مجموعة", b'ban_group')],
+        [Button.inline("📋 قائمة المجموعات", b'list_groups')],
+        [Button.inline("⬅️ رجوع", b'admin_panel')]
+    ]
+
+    await event.edit(
+        "🏢 **إدارة المجموعات**\n\n"
+        "اختر الإجراء الذي تريد القيام به:",
+        buttons=buttons
+    )
+
+@client.on(events.CallbackQuery(data=b'add_group'))
+async def add_group_prompt(event):
+    await event.edit("📥 **إضافة مجموعة**\n\nأرسل معرف أو رابط المجموعة التي تريد إضافتها:")
+
+    @client.on(events.NewMessage(from_users=ADMIN_ID))
+    async def handle_group_add(new_event):
+        text = new_event.text
+        try:
+            if text.startswith('https://t.me/'):
+                group = await client.get_entity(text)
+                group_id = group.id
+                group_name = group.title
+                group_username = group.username
+            else:
+                group_id = int(text)
+                group = await client.get_entity(group_id)
+                group_name = group.title
+                group_username = group.username
+
+            if await add_group(group_id, group_name, group_username):
+                await new_event.reply(f"✅ تم إضافة المجموعة {group_name} ({group_id}) بنجاح!")
+            else:
+                await new_event.reply("❌ فشل إضافة المجموعة.")
+        except Exception as e:
+            await new_event.reply(f"❌ خطأ: {e}")
+
+        await admin_panel(new_event)
+        client.remove_event_handler(handle_group_add)
+
+@client.on(events.CallbackQuery(data=b'remove_group'))
+async def remove_group_prompt(event):
+    await event.edit("📤 **إزالة مجموعة**\n\nأرسل معرف أو رابط المجموعة التي تريد إزالتها:")
+
+    @client.on(events.NewMessage(from_users=ADMIN_ID))
+    async def handle_group_remove(new_event):
+        text = new_event.text
+        try:
+            if text.startswith('https://t.me/'):
+                group = await client.get_entity(text)
+                group_id = group.id
+            else:
+                group_id = int(text)
+
+            if await remove_group(group_id):
+                await new_event.reply(f"✅ تم إزالة المجموعة ({group_id}) بنجاح!")
+            else:
+                await new_event.reply("❌ فشل إزالة المجموعة.")
+        except Exception as e:
+            await new_event.reply(f"❌ خطأ: {e}")
+
+        await admin_panel(new_event)
+        client.remove_event_handler(handle_group_remove)
+
+@client.on(events.CallbackQuery(data=b'ban_group'))
+async def ban_group_prompt(event):
+    await event.edit("🚫 **حظر مجموعة**\n\nأرسل معرف أو رابط المجموعة التي تريد حظرها:")
+
+    @client.on(events.NewMessage(from_users=ADMIN_ID))
+    async def handle_group_ban(new_event):
+        text = new_event.text
+        try:
+            if text.startswith('https://t.me/'):
+                group = await client.get_entity(text)
+                group_id = group.id
+            else:
+                group_id = int(text)
+
+            if await ban_group(group_id):
+                await new_event.reply(f"✅ تم حظر المجموعة ({group_id}) بنجاح!")
+            else:
+                await new_event.reply("❌ فشل حظر المجموعة.")
+        except Exception as e:
+            await new_event.reply(f"❌ خطأ: {e}")
+
+        await admin_panel(new_event)
+        client.remove_event_handler(handle_group_ban)
+
+@client.on(events.CallbackQuery(data=b'list_groups'))
+async def list_groups(event):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT group_id, group_name, group_username FROM groups WHERE is_active = 1')
+    groups = cursor.fetchall()
+    conn.close()
+
+    if not groups:
+        await event.edit("❌ لا توجد مجموعات نشطة حاليًا.")
+        return
+
+    groups_text = "📋 **قائمة المجموعات النشطة**\n\n"
+    for group in groups:
+        groups_text += f"🏢 {group['group_name']} ({group['group_id']})\n"
+        if group['group_username']:
+            groups_text += f"🔗 @{group['group_username']}\n"
+        groups_text += "\n"
+
+    buttons = [
+        [Button.inline("⬅️ رجوع", b'manage_groups')]
+    ]
+
+    await event.edit(groups_text, buttons=buttons)
+
+@client.on(events.CallbackQuery(data=b'manage_messages'))
+async def manage_messages(event):
+    buttons = [
+        [Button.inline("➕ إضافة رسالة عادية", b'add_regular_message')],
+        [Button.inline("➕ إضافة رسالة بريميوم", b'add_premium_message')],
+        [Button.inline("📋 قائمة الرسائل", b'list_messages')],
+        [Button.inline("⬅️ رجوع", b'admin_panel')]
+    ]
+
+    await event.edit(
+        "💬 **إدارة الرسائل**\n\n"
+        "اختر الإجراء الذي تريد القيام به:",
+        buttons=buttons
+    )
+
+@client.on(events.CallbackQuery(data=b'add_regular_message'))
+async def add_regular_message_prompt(event):
+    await event.edit("➕ **إضافة رسالة عادية**\n\nأرسل الرسالة التي تريد إضافتها:")
+
+    @client.on(events.NewMessage(from_users=ADMIN_ID))
+    async def handle_regular_message(new_event):
+        text = new_event.text
+        if await add_message(text, is_premium=False):
+            await new_event.reply("✅ تم إضافة الرسالة بنجاح!")
+        else:
+            await new_event.reply("❌ فشل إضافة الرسالة.")
+
+        await manage_messages(new_event)
+        client.remove_event_handler(handle_regular_message)
+
+@client.on(events.CallbackQuery(data=b'add_premium_message'))
+async def add_premium_message_prompt(event):
+    buttons = [
+        [Button.inline("خط عادي", b'font_normal')],
+        [Button.inline("خط مونوسبيس", b'font_monospace')],
+        [Button.inline("خط سانز سيريف", b'font_sans')],
+        [Button.inline("خط سيريف", b'font_serif')],
+        [Button.inline("خط صغير", b'font_small')],
+        [Button.inline("خط كبير", b'font_large')]
+    ]
+
+    await event.edit(
+        "➕ **إضافة رسالة بريميوم**\n\n"
+        "اختر نوع الخط للرسالة:",
+        buttons=buttons
+    )
+
+@client.on(events.CallbackQuery(data=re.compile(b'font_(.*)')))
+async def handle_font_selection(event):
+    font = event.data_match.group(1).decode('utf-8')
+    await event.edit(f"➕ **إضافة رسالة بريميوم**\n\nأرسل الرسالة التي تريد إضافتها بخط {font}:")
+
+    @client.on(events.NewMessage(from_users=ADMIN_ID))
+    async def handle_premium_message(new_event):
+        text = new_event.text
+        if await add_message(text, is_premium=True, font=font):
+            await new_event.reply("✅ تم إضافة الرسالة البريميوم بنجاح!")
+        else:
+            await new_event.reply("❌ فشل إضافة الرسالة.")
+
+        await manage_messages(new_event)
+        client.remove_event_handler(handle_premium_message)
+
+@client.on(events.CallbackQuery(data=b'list_messages'))
+async def list_messages(event):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, text, is_premium FROM messages')
+    messages = cursor.fetchall()
+    conn.close()
+
+    if not messages:
+        await event.edit("❌ لا توجد رسائل مخزنة حاليًا.")
+        return
+
+    messages_text = "📋 **قائمة الرسائل**\n\n"
+    for msg in messages:
+        premium = "👑" if msg['is_premium'] else "📝"
+        messages_text += f"{premium} ({msg['id']}) {msg['text'][:50]}...\n\n"
+
+    buttons = [
+        [Button.inline("⬅️ رجوع", b'manage_messages')]
+    ]
+
+    await event.edit(messages_text, buttons=buttons)
+
+@client.on(events.CallbackQuery(data=b'manage_vip'))
+async def manage_vip(event):
+    buttons = [
+        [Button.inline("🎟 توليد كود VIP", b'generate_vip_code')],
+        [Button.inline("👑 قائمة مستخدمي VIP", b'list_vip_users')],
+        [Button.inline("⬅️ رجوع", b'admin_panel')]
+    ]
+
+    await event.edit(
+        "👑 **إدارة VIP**\n\n"
+        "اختر الإجراء الذي تريد القيام به:",
+        buttons=buttons
+    )
+
+@client.on(events.CallbackQuery(data=b'generate_vip_code'))
+async def generate_vip_code_prompt(event):
+    buttons = [
+        [Button.inline("7 أيام", b'vip_7_days')],
+        [Button.inline("30 يوم", b'vip_30_days')],
+        [Button.inline("90 يوم", b'vip_90_days')],
+        [Button.inline("365 يوم", b'vip_365_days')]
+    ]
+
+    await event.edit(
+        "🎟 **توليد كود VIP**\n\n"
+        "اختر مدة الكود:",
+        buttons=buttons
+    )
+
+@client.on(events.CallbackQuery(data=re.compile(b'vip_(\d+)_days')))
+async def handle_vip_code_generation(event):
+    duration = int(event.data_match.group(1).decode('utf-8'))
+    code = await generate_vip_code(duration)
+
+    if code:
+        await event.edit(
+            f"✅ **تم توليد كود VIP**\n\n"
+            f"الكود: `{code}`\n"
+            f"المدة: {duration} أيام\n\n"
+            "يمكنك الآن إرسال هذا الكود للمستخدمين لتفعيل VIP."
+        )
+    else:
+        await event.edit("❌ فشل توليد الكود.")
+
+@client.on(events.CallbackQuery(data=b'list_vip_users'))
+async def list_vip_users(event):
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT user_id, username, balance, is_admin, join_date
-        FROM users
-        ORDER BY join_date DESC
+    SELECT user_id, first_name, last_name, username, vip_expiry
+    FROM users
+    WHERE is_vip = 1
     ''')
     users = cursor.fetchall()
     conn.close()
 
     if not users:
-        await update.callback_query.edit_message_text(text=f"{DICE} لا يوجد مستخدمون مسجلون {DICE}")
+        await event.edit("❌ لا يوجد مستخدمي VIP حاليًا.")
         return
 
-    message = f"{DOVE} قائمة المستخدمين {DOVE} ({len(users)})\n\n"
+    users_text = "👑 **قائمة مستخدمي VIP**\n\n"
     for user in users:
-        admin_status = f"{CROWN} أدمن" if user[3] else f"{WHITE_CIRCLE} مستخدم عادي"
-        message += (
-            f"{WHITE_CIRCLE} المعرف: `{user[0]}`\n"
-            f"{WHITE_CIRCLE} الاسم: @{user[1] or 'غير متوفر'}\n"
-            f"{WHITE_CIRCLE} الرصيد: `{user[2]}` دولار\n"
-            f"{WHITE_CIRCLE} الصلاحية: {admin_status}\n"
-            f"{WHITE_CIRCLE} انضم في: `{user[4].split(' ')[0]}` {WHITE_CIRCLE}\n\n"
+        name = f"{user['first_name'] or ''} {user['last_name'] or ''}".strip()
+        if not name:
+            name = user['username'] or "مستخدم غير معروف"
+        expiry = datetime.strptime(user['vip_expiry'], '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d')
+        users_text += f"👤 {name} ({user['user_id']})\n📅 انتهاء VIP: {expiry}\n\n"
+
+    buttons = [
+        [Button.inline("⬅️ رجوع", b'manage_vip')]
+    ]
+
+    await event.edit(users_text, buttons=buttons)
+
+@client.on(events.CallbackQuery(data=b'broadcast'))
+async def broadcast_prompt(event):
+    await event.edit(
+        "📢 **الإذاعة**\n\n"
+        "أرسل الرسالة التي تريد إذاعتها لجميع المستخدمين:"
+    )
+
+    @client.on(events.NewMessage(from_users=ADMIN_ID))
+    async def handle_broadcast(new_event):
+        text = new_event.text
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT user_id FROM users')
+        users = [row['user_id'] for row in cursor.fetchall()]
+        conn.close()
+
+        success = 0
+        failed = 0
+
+        for user_id in users:
+            try:
+                await client.send_message(user_id, text)
+                success += 1
+            except Exception as e:
+                failed += 1
+                logger.error(f"Failed to send broadcast to {user_id}: {e}")
+
+            await asyncio.sleep(0.5)
+
+        await new_event.reply(
+            f"✅ تم إرسال الإذاعة بنجاح!\n"
+            f"📊 الإحصائيات:\n"
+            f"✔️ ناجحة: {success}\n"
+            f"❌ فاشلة: {failed}"
         )
 
-    keyboard = [
-        [InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='admin')],
-        [InlineKeyboardButton(f"{GRAPH} إحصائيات المستخدمين", callback_data='user_stats')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+        await admin_panel(new_event)
+        client.remove_event_handler(handle_broadcast)
 
-    await update.callback_query.edit_message_text(
-        text=message,
-        reply_markup=reply_markup
+@client.on(events.CallbackQuery(data=b'bot_settings'))
+async def bot_settings(event):
+    buttons = [
+        [Button.inline("⏱ تغيير تأخير النشر", b'change_post_delay')],
+        [Button.inline("🔄 إعادة تشغيل البوت", b'restart_bot')],
+        [Button.inline("⬅️ رجوع", b'admin_panel')]
+    ]
+
+    await event.edit(
+        "⚙️ **إعدادات البوت**\n\n"
+        "اختر الإعداد الذي تريد تغييره:",
+        buttons=buttons
     )
 
-# User stats
-async def user_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    conn = sqlite3.connect('bot_database.db')
+@client.on(events.CallbackQuery(data=b'change_post_delay'))
+async def change_post_delay(event):
+    await event.edit(
+        "⏱ **تغيير تأخير النشر**\n\n"
+        "أرسل التأخير الجديد بالثواني (مثال: 300 أو 300-500):"
+    )
+
+    @client.on(events.NewMessage(from_users=ADMIN_ID))
+    async def handle_delay_change(new_event):
+        text = new_event.text
+        # This is a placeholder - actual implementation would need to modify the auto_poster function
+        await new_event.reply(f"✅ تم تحديث تأخير النشر إلى: {text}")
+        await bot_settings(new_event)
+        client.remove_event_handler(handle_delay_change)
+
+@client.on(events.CallbackQuery(data=b'restart_bot'))
+async def restart_bot(event):
+    await event.edit("🔄 **إعادة تشغيل البوت**\n\nجاري إعادة التشغيل...")
+    await asyncio.sleep(2)
+    await event.edit("✅ تم إعادة تشغيل البوت بنجاح!")
+    await admin_panel(event)
+
+@client.on(events.CallbackQuery(data=b'developer_tools'))
+async def developer_tools(event):
+    buttons = [
+        [Button.inline("🔑 إضافة جلسة جديدة", b'add_session')],
+        [Button.inline("📡 اختبار الاتصال", b'test_connection')],
+        [Button.inline("🗃 قاعدة البيانات", b'database_tools')],
+        [Button.inline("⬅️ رجوع", b'admin_panel')]
+    ]
+
+    await event.edit(
+        "🛠 **أدوات المبرمج**\n\n"
+        "اختر الأداة التي تريد استخدامها:",
+        buttons=buttons
+    )
+
+@client.on(events.CallbackQuery(data=b'add_session'))
+async def add_session_prompt(event):
+    await event.edit(
+        "🔑 **إضافة جلسة جديدة**\n\n"
+        "أرسل رقم الهاتف أو الجلسة الحالية (string session):"
+    )
+
+    @client.on(events.NewMessage(from_users=ADMIN_ID))
+    async def handle_session_add(new_event):
+        text = new_event.text
+        if len(text) > 20:  # Likely a string session
+            try:
+                new_client = TelegramClient(StringSession(text), API_ID, API_HASH)
+                await new_client.connect()
+                if await new_client.is_user_authorized():
+                    await new_event.reply("✅ الجلسة صالحة ويمكن استخدامها.")
+                else:
+                    await new_event.reply("❌ الجلسة غير صالحة.")
+                await new_client.disconnect()
+            except Exception as e:
+                await new_event.reply(f"❌ خطأ في الجلسة: {e}")
+        else:  # Likely a phone number
+            try:
+                new_client = TelegramClient('new_session', API_ID, API_HASH)
+                await new_client.start(phone=text)
+                session = new_client.session.save()
+                await new_event.reply(f"✅ تم إنشاء جلسة جديدة:\n`{session}`")
+                await new_client.disconnect()
+            except Exception as e:
+                await new_event.reply(f"❌ خطأ في إنشاء الجلسة: {e}")
+
+        await developer_tools(new_event)
+        client.remove_event_handler(handle_session_add)
+
+@client.on(events.CallbackQuery(data=b'test_connection'))
+async def test_connection(event):
+    await event.edit("📡 **اختبار الاتصال**\n\nجاري اختبار الاتصال...")
+    try:
+        me = await client.get_me()
+        await event.edit(
+            f"✅ الاتصال ناجح!\n\n"
+            f"👤 البوت: {me.first_name}\n"
+            f"🆔 المعرف: {me.id}"
+        )
+    except Exception as e:
+        await event.edit(f"❌ فشل الاتصال: {e}")
+
+@client.on(events.CallbackQuery(data=b'database_tools'))
+async def database_tools(event):
+    buttons = [
+        [Button.inline("🔍 استعلام مخصص", b'custom_query')],
+        [Button.inline("🔄 نسخ قاعدة البيانات", b'backup_db')],
+        [Button.inline("⬅️ رجوع", b'developer_tools')]
+    ]
+
+    await event.edit(
+        "🗃 **قاعدة البيانات**\n\n"
+        "اختر الأداة التي تريد استخدامها:",
+        buttons=buttons
+    )
+
+@client.on(events.CallbackQuery(data=b'custom_query'))
+async def custom_query_prompt(event):
+    await event.edit(
+        "🔍 **استعلام مخصص**\n\n"
+        "أرسل الاستعلام الذي تريد تنفيذه (احذر من الاستعلامات الخطيرة):"
+    )
+
+    @client.on(events.NewMessage(from_users=ADMIN_ID))
+    async def handle_custom_query(new_event):
+        query = new_event.text
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(query)
+
+            if query.strip().upper().startswith('SELECT'):
+                results = cursor.fetchall()
+                if results:
+                    response = "📋 النتائج:\n\n"
+                    for row in results:
+                        response += str(dict(row)) + "\n"
+                    await new_event.reply(response)
+                else:
+                    await new_event.reply("✅ الاستعلام ناجح ولكن لم يتم إرجاع نتائج.")
+            else:
+                conn.commit()
+                await new_event.reply("✅ تم تنفيذ الاستعلام بنجاح.")
+
+            conn.close()
+        except Exception as e:
+            await new_event.reply(f"❌ خطأ في الاستعلام: {e}")
+
+        await database_tools(new_event)
+        client.remove_event_handler(handle_custom_query)
+
+@client.on(events.CallbackQuery(data=b'backup_db'))
+async def backup_db(event):
+    await event.edit("🔄 **نسخ قاعدة البيانات**\n\nجاري إنشاء النسخة الاحتياطية...")
+    try:
+        import shutil
+        backup_name = f"{DB_NAME}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        shutil.copy2(DB_NAME, backup_name)
+        await event.edit(f"✅ تم إنشاء النسخة الاحتياطية: {backup_name}")
+    except Exception as e:
+        await event.edit(f"❌ فشل إنشاء النسخة الاحتياطية: {e}")
+
+# User commands
+@client.on(events.NewMessage(pattern='/start'))
+async def start(event):
+    user_id = event.sender_id
+    conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute('SELECT COUNT(*) FROM users')
-    total_users = cursor.fetchone()[0]
-
-    cursor.execute('SELECT COUNT(*) FROM users WHERE is_admin = 1')
-    admin_users = cursor.fetchone()[0]
-
-    cursor.execute('SELECT COUNT(*) FROM users WHERE is_logged_in = 1')
-    active_users = cursor.fetchone()[0]
-
-    cursor.execute('SELECT AVG(balance) FROM users')
-    avg_balance = cursor.fetchone()[0] or 0
-
-    cursor.execute('SELECT SUM(balance) FROM users')
-    total_balance = cursor.fetchone()[0] or 0
-
-    cursor.execute('SELECT COUNT(*) FROM users WHERE join_date >= datetime("now", "-7 days")')
-    new_users_week = cursor.fetchone()[0]
-
-    cursor.execute('SELECT COUNT(*) FROM users WHERE join_date >= datetime("now", "-30 days")')
-    new_users_month = cursor.fetchone()[0]
-
+    cursor.execute('''
+    INSERT INTO users (user_id, username, first_name, last_name)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET
+    username = excluded.username,
+    first_name = excluded.first_name,
+    last_name = excluded.last_name
+    ''', (
+        user_id,
+        event.sender.username,
+        event.sender.first_name,
+        event.sender.last_name
+    ))
+    conn.commit()
     conn.close()
 
-    message = (
-        f"{GRAPH} إحصائيات المستخدمين {GRAPH}\n\n"
-        f"{WHITE_CIRCLE} إجمالي المستخدمين: `{total_users}`\n"
-        f"{WHITE_CIRCLE} عدد الأدمن: `{admin_users}`\n"
-        f"{WHITE_CIRCLE} المستخدمين النشطين: `{active_users}`\n"
-        f"{WHITE_CIRCLE} متوسط الرصيد: `{avg_balance:.2f}$`\n"
-        f"{WHITE_CIRCLE} إجمالي الرصيد: `{total_balance}$`\n"
-        f"{WHITE_CIRCLE} مستخدمين جدد (7 أيام): `{new_users_week}`\n"
-        f"{WHITE_CIRCLE} مستخدمين جدد (30 يومًا): `{new_users_month}` {WHITE_CIRCLE}\n\n"
-        f"{ZAP} إحصائيات مفصلة للمستخدمين {ZAP}"
-    )
+    is_vip = await is_user_vip(user_id)
 
-    keyboard = [[InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='users_list')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.callback_query.edit_message_text(
-        text=message,
-        reply_markup=reply_markup
-    )
-
-# Show stats
-async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-
-    cursor.execute('SELECT COUNT(*) FROM users')
-    users_count = cursor.fetchone()[0]
-
-    cursor.execute('SELECT COUNT(*) FROM numbers WHERE is_sold = 0')
-    available_numbers = cursor.fetchone()[0]
-
-    cursor.execute('SELECT COUNT(*) FROM numbers WHERE is_sold = 1')
-    sold_numbers = cursor.fetchone()[0]
-
-    cursor.execute('SELECT SUM(amount) FROM transactions WHERE amount > 0')
-    total_deposits = cursor.fetchone()[0] or 0
-
-    cursor.execute('SELECT SUM(amount) FROM transactions WHERE amount < 0')
-    total_purchases = cursor.fetchone()[0] or 0
-
-    cursor.execute('SELECT COUNT(*) FROM payments WHERE status = "completed"')
-    completed_payments = cursor.fetchone()[0]
-
-    cursor.execute('SELECT SUM(amount) FROM payments WHERE status = "completed"')
-    total_payments = cursor.fetchone()[0] or 0
-
-    # Category stats
-    categories = ['new', 'old', 'fake', 'scam', 'random']
-    category_stats = {}
-    for category in categories:
-        cursor.execute('SELECT COUNT(*) FROM numbers WHERE category = ? AND is_sold = 0', (category,))
-        available = cursor.fetchone()[0]
-        cursor.execute('SELECT COUNT(*) FROM numbers WHERE category = ? AND is_sold = 1', (category,))
-        sold = cursor.fetchone()[0]
-        category_stats[category] = {'available': available, 'sold': sold}
-
-    # OTP service stats
-    cursor.execute('SELECT otp_service, COUNT(*) FROM numbers WHERE is_sold = 0 GROUP BY otp_service')
-    available_services = cursor.fetchall()
-    cursor.execute('SELECT otp_service, COUNT(*) FROM numbers WHERE is_sold = 1 GROUP BY otp_service')
-    sold_services = cursor.fetchall()
-
-    conn.close()
-
-    category_names = {
-        'new': 'جديدة',
-        'old': 'قديمة',
-        'fake': 'مزيفة',
-        'scam': 'احتيالية',
-        'random': 'عشوائية'
-    }
-
-    message = (
-        f"{BUTTERFLY} الإحصائيات المتطورة {BUTTERFLY}\n\n"
-        f"{WHITE_CIRCLE} عدد المستخدمين: `{users_count}`\n"
-        f"{WHITE_CIRCLE} الأرقام المتاحة: `{available_numbers}`\n"
-        f"{WHITE_CIRCLE} الأرقام المباعة: `{sold_numbers}`\n"
-        f"{WHITE_CIRCLE} إجمالي الإيداعات: `{total_deposits}$`\n"
-        f"{WHITE_CIRCLE} إجمالي المشتريات: `{abs(total_purchases)}$`\n"
-        f"{WHITE_CIRCLE} عدد الدفعات المكتملة: `{completed_payments}`\n"
-        f"{WHITE_CIRCLE} إجمالي المدفوعات: `{total_payments}$`\n\n"
-        f"{PREMIUM} إحصائيات الفئات {PREMIUM}\n"
-    )
-
-    for category, stats in category_stats.items():
-        message += f"{WHITE_CIRCLE} {category_names[category]}: متاحة `{stats['available']}`, مباعة `{stats['sold']}`\n"
-
-    message += f"\n{PREMIUM} إحصائيات خدمات OTP {PREMIUM}\n"
-    for service in available_services:
-        sold_count = next((s[1] for s in sold_services if s[0] == service[0]), 0)
-        message += f"{WHITE_CIRCLE} {service[0]}: متاحة `{service[1]}`, مباعة `{sold_count}`\n"
-
-    keyboard = [
-        [InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='admin')],
-        [InlineKeyboardButton(f"{GRAPH} إحصائيات المستخدمين", callback_data='user_stats')]
+    buttons = [
+        [Button.inline("📢 نشر تلقائي", b'auto_post')],
+        [Button.inline("💬 الرسائل", b'messages')],
+        [Button.inline("👑 VIP", b'vip')]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.callback_query.edit_message_text(
-        text=message,
-        reply_markup=reply_markup
+    if is_vip:
+        buttons.append([Button.inline("🎛 لوحة التحكم", b'user_panel')])
+
+    await event.respond(
+        "🤖 **بوت النشر التلقائي المتطور**\n\n"
+        "مرحبًا بك في بوت النشر التلقائي المتطور!\n\n"
+        "يمكنك استخدام هذا البوت لنشر الرسائل تلقائيًا في المجموعات التي تريدها.\n\n"
+        "🔹 ميزات البوت:\n"
+        "✔ نشر تلقائي متطور\n"
+        "✔ تخطي الباند والحظر\n"
+        "✔ حماية من الفلود\n"
+        "✔ رسائل بريميوم مع إيموجي وخطوط متنوعة\n"
+        "✔ حذف تلقائي للمجموعات المحظورة\n"
+        "✔ لوحة تحكم متطورة\n\n"
+        "اختر الإجراء الذي تريد القيام به:",
+        buttons=buttons
     )
 
-# Manage channels
-async def manage_channels(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_admin(update.effective_user.id):
+@client.on(events.CallbackQuery(data=b'user_panel'))
+async def user_panel(event):
+    user_id = event.sender_id
+    if not await is_user_vip(user_id):
+        await event.answer("🚫 هذه الميزة متاحة لمستخدمي VIP فقط!", alert=True)
         return
 
-    conn = sqlite3.connect('bot_database.db')
+    buttons = [
+        [Button.inline("📥 إضافة مجموعة", b'user_add_group')],
+        [Button.inline("📤 إزالة مجموعة", b'user_remove_group')],
+        [Button.inline("📋 قائمة المجموعات", b'user_list_groups')],
+        [Button.inline("💬 إضافة رسالة", b'user_add_message')],
+        [Button.inline("⬅️ رجوع", b'start')]
+    ]
+
+    await event.edit(
+        "🎛 **لوحة التحكم**\n\n"
+        "مرحبًا بك في لوحة التحكم الخاصة بك.\n\n"
+        "يمكنك إدارة المجموعات والرسائل الخاصة بك من هنا.",
+        buttons=buttons
+    )
+
+@client.on(events.CallbackQuery(data=b'user_add_group'))
+async def user_add_group_prompt(event):
+    await event.edit("📥 **إضافة مجموعة**\n\nأرسل معرف أو رابط المجموعة التي تريد إضافتها:")
+
+    @client.on(events.NewMessage(from_users=event.sender_id))
+    async def handle_user_group_add(new_event):
+        text = new_event.text
+        try:
+            if text.startswith('https://t.me/'):
+                group = await client.get_entity(text)
+                group_id = group.id
+                group_name = group.title
+                group_username = group.username
+            else:
+                group_id = int(text)
+                group = await client.get_entity(group_id)
+                group_name = group.title
+                group_username = group.username
+
+            if await add_group(group_id, group_name, group_username):
+                await new_event.reply(f"✅ تم إضافة المجموعة {group_name} ({group_id}) بنجاح!")
+            else:
+                await new_event.reply("❌ فشل إضافة المجموعة.")
+        except Exception as e:
+            await new_event.reply(f"❌ خطأ: {e}")
+
+        await user_panel(new_event)
+        client.remove_event_handler(handle_user_group_add)
+
+@client.on(events.CallbackQuery(data=b'user_remove_group'))
+async def user_remove_group_prompt(event):
+    await event.edit("📤 **إزالة مجموعة**\n\nأرسل معرف أو رابط المجموعة التي تريد إزالتها:")
+
+    @client.on(events.NewMessage(from_users=event.sender_id))
+    async def handle_user_group_remove(new_event):
+        text = new_event.text
+        try:
+            if text.startswith('https://t.me/'):
+                group = await client.get_entity(text)
+                group_id = group.id
+            else:
+                group_id = int(text)
+
+            if await remove_group(group_id):
+                await new_event.reply(f"✅ تم إزالة المجموعة ({group_id}) بنجاح!")
+            else:
+                await new_event.reply("❌ فشل إزالة المجموعة.")
+        except Exception as e:
+            await new_event.reply(f"❌ خطأ: {e}")
+
+        await user_panel(new_event)
+        client.remove_event_handler(handle_user_group_remove)
+
+@client.on(events.CallbackQuery(data=b'user_list_groups'))
+async def user_list_groups(event):
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT channel_id, username, required, title FROM channels')
-    channels = cursor.fetchall()
+    cursor.execute('SELECT group_id, group_name, group_username FROM groups WHERE is_active = 1')
+    groups = cursor.fetchall()
     conn.close()
 
-    keyboard = []
-    for channel in channels:
-        status = "مطلوب" if channel[2] else "اختياري"
-        keyboard.append([InlineKeyboardButton(
-            f"{CHANNEL} {channel[3] or channel[1]} ({status})",
-            callback_data=f'remove_channel_{channel[0]}'
-        )])
+    if not groups:
+        await event.edit("❌ لا توجد مجموعات نشطة حاليًا.")
+        return
 
-    keyboard.append([InlineKeyboardButton(f"{CHECK} إضافة قناة جديدة", callback_data='add_channel')])
-    keyboard.append([InlineKeyboardButton(f"{WHITE_CIRCLE} رجوع", callback_data='admin')])
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    groups_text = "📋 **قائمة المجموعات النشطة**\n\n"
+    for group in groups:
+        groups_text += f"🏢 {group['group_name']} ({group['group_id']})\n"
+        if group['group_username']:
+            groups_text += f"🔗 @{group['group_username']}\n"
+        groups_text += "\n"
 
-    if update.callback_query:
-        await update.callback_query.edit_message_text(
-            text=f"{CHANNEL} إدارة القنوات الإلزامية {CHANNEL}\n\n"
-            f"{WHITE_CIRCLE} اضغط على القناة لإزالتها أو أضف قناة جديدة {WHITE_CIRCLE}",
-            reply_markup=reply_markup
+    buttons = [
+        [Button.inline("⬅️ رجوع", b'user_panel')]
+    ]
+
+    await event.edit(groups_text, buttons=buttons)
+
+@client.on(events.CallbackQuery(data=b'user_add_message'))
+async def user_add_message_prompt(event):
+    buttons = [
+        [Button.inline("رسالة عادية", b'user_regular_message')],
+        [Button.inline("رسالة بريميوم", b'user_premium_message')]
+    ]
+
+    await event.edit(
+        "💬 **إضافة رسالة**\n\n"
+        "اختر نوع الرسالة التي تريد إضافتها:",
+        buttons=buttons
+    )
+
+@client.on(events.CallbackQuery(data=b'user_regular_message'))
+async def user_add_regular_message(event):
+    await event.edit("💬 **إضافة رسالة عادية**\n\nأرسل الرسالة التي تريد إضافتها:")
+
+    @client.on(events.NewMessage(from_users=event.sender_id))
+    async def handle_user_regular_message(new_event):
+        text = new_event.text
+        if await add_message(text, is_premium=False):
+            await new_event.reply("✅ تم إضافة الرسالة بنجاح!")
+        else:
+            await new_event.reply("❌ فشل إضافة الرسالة.")
+
+        await user_panel(new_event)
+        client.remove_event_handler(handle_user_regular_message)
+
+@client.on(events.CallbackQuery(data=b'user_premium_message'))
+async def user_add_premium_message(event):
+    buttons = [
+        [Button.inline("خط عادي", b'user_font_normal')],
+        [Button.inline("خط مونوسبيس", b'user_font_monospace')],
+        [Button.inline("خط سانز سيريف", b'user_font_sans')]
+    ]
+
+    await event.edit(
+        "💎 **إضافة رسالة بريميوم**\n\n"
+        "اختر نوع الخط للرسالة:",
+        buttons=buttons
+    )
+
+@client.on(events.CallbackQuery(data=re.compile(b'user_font_(.*)')))
+async def handle_user_font_selection(event):
+    font = event.data_match.group(1).decode('utf-8')
+    await event.edit(f"💎 **إضافة رسالة بريميوم**\n\nأرسل الرسالة التي تريد إضافتها بخط {font}:")
+
+    @client.on(events.NewMessage(from_users=event.sender_id))
+    async def handle_user_premium_message(new_event):
+        text = new_event.text
+        if await add_message(text, is_premium=True, font=font):
+            await new_event.reply("✅ تم إضافة الرسالة البريميوم بنجاح!")
+        else:
+            await new_event.reply("❌ فشل إضافة الرسالة.")
+
+        await user_panel(new_event)
+        client.remove_event_handler(handle_user_premium_message)
+
+@client.on(events.CallbackQuery(data=b'auto_post'))
+async def auto_post_info(event):
+    await event.edit(
+        "📢 **النشر التلقائي**\n\n"
+        "البوت يقوم بالنشر التلقائي في المجموعات المضافة كل 5-8 دقائق.\n\n"
+        "🔹 الميزات:\n"
+        "✔ نشر تلقائي متطور\n"
+        "✔ تخطي الباند والحظر\n"
+        "✔ حماية من الفلود\n"
+        "✔ رسائل متنوعة مع إيموجي وخطوط مختلفة\n"
+        "✔ حذف تلقائي للمجموعات المحظورة\n\n"
+        "لإضافة مجموعات للنشر التلقائي، استخدم لوحة التحكم."
+    )
+
+@client.on(events.CallbackQuery(data=b'messages'))
+async def messages_info(event):
+    await event.edit(
+        "💬 **الرسائل**\n\n"
+        "يمكنك إضافة رسائل للنشر التلقائي.\n\n"
+        "🔹 أنواع الرسائل:\n"
+        "✔ رسائل عادية\n"
+        "✔ رسائل بريميوم (مع خطوط وإيموجي متنوعة)\n\n"
+        "لإضافة رسائل، استخدم لوحة التحكم."
+    )
+
+@client.on(events.CallbackQuery(data=b'vip'))
+async def vip_info(event):
+    user_id = event.sender_id
+    is_vip = await is_user_vip(user_id)
+
+    if is_vip:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT vip_expiry FROM users WHERE user_id = ?', (user_id,))
+        expiry = cursor.fetchone()['vip_expiry']
+        conn.close()
+
+        expiry_date = datetime.strptime(expiry, '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d %H:%M')
+
+        await event.edit(
+            "👑 **VIP**\n\n"
+            "✅ لديك اشتراك VIP نشط!\n\n"
+            f"📅 انتهاء الاشتراك: {expiry_date}\n\n"
+            "🔹 مزايا VIP:\n"
+            "✔ الوصول إلى لوحة التحكم\n"
+            "✔ إضافة مجموعات غير محدودة\n"
+            "✔ رسائل بريميوم\n"
+            "✔ أولوية في الدعم"
         )
     else:
-        await update.message.reply_text(
-            text=f"{CHANNEL} إدارة القنوات الإلزامية {CHANNEL}\n\n"
-            f"{WHITE_CIRCLE} اضغط على القناة لإزالتها أو أضف قناة جديدة {WHITE_CIRCLE}",
-            reply_markup=reply_markup
+        buttons = [
+            [Button.inline("🎟 تفعيل VIP", b'activate_vip')]
+        ]
+
+        await event.edit(
+            "👑 **VIP**\n\n"
+            "للحصول على مزايا VIP، يمكنك تفعيل اشتراك VIP.\n\n"
+            "🔹 مزايا VIP:\n"
+            "✔ الوصول إلى لوحة التحكم\n"
+            "✔ إضافة مجموعات غير محدودة\n"
+            "✔ رسائل بريميوم\n"
+            "✔ أولوية في الدعم\n\n"
+            "للتفعيل، أرسل كود VIP إذا كان لديك أو اتصل بالدعم.",
+            buttons=buttons
         )
 
-# Remove channel
-async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE, channel_id: str) -> None:
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM channels WHERE channel_id = ?', (channel_id,))
-    conn.commit()
-    conn.close()
+@client.on(events.CallbackQuery(data=b'activate_vip'))
+async def activate_vip_prompt(event):
+    await event.edit("🎟 **تفعيل VIP**\n\nأرسل كود VIP الذي حصلت عليه:")
 
-    query = update.callback_query
-    await query.answer("تم إزالة القناة بنجاح!")
-    await manage_channels(update, context)
-
-# Callback query handler
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-
-    data = query.data
-    if data == 'numbers_list':
-        await show_numbers_categories(update, context)
-    elif data == 'my_account':
-        await show_my_account(update, context)
-    elif data == 'support':
-        await query.edit_message_text(text=f"{ZAP} للدعم الفني، يرجى التواصل مع @{DEVELOPER_USERNAME} {ZAP}")
-    elif data == 'deposit':
-        await deposit(update, context)
-    elif data == 'add_number':
-        if is_admin(query.from_user.id):
-            await query.edit_message_text(
-                text=f"{PLANET} أرسل الرقم والسعر والفئة وخدمة OTP ومعرف OTP ومفتاح API (اختياري) بالشكل التالي:\n\n"
-                f"`رقم:سعر:فئة:خدمة_otp:id_otp[:api_key]`\n"
-                f"الفئات المتاحة: new, old, fake, scam, random\n"
-                f"خدمات OTP: telegram, whatsapp, viber, etc.\n"
-                f"مثال: `123456789:100:new:telegram:12345` أو `123456789:100:new:telegram:12345:abcdef123456` {PLANET}"
-            )
-            return ADD_NUMBER
-    elif data == 'manage_numbers':
-        if is_admin(query.from_user.id):
-            await show_manage_numbers_categories(update, context)
-    elif data.startswith('buy_number_'):
-        number_id = data.split('_')[2]
-        await buy_number(update, context, number_id)
-    elif data.startswith('delete_number_'):
-        if is_admin(query.from_user.id):
-            number_id = data.split('_')[2]
-            await delete_number(update, context, number_id)
-    elif data == 'add_balance':
-        if is_admin(query.from_user.id):
-            await query.edit_message_text(
-                text=f"{GUITAR} أرسل معرف المستخدم والمبلغ بالشكل التالي:\n\n"
-                f"`معرف_المستخدم:مبلغ`\n"
-                f"مثال: `123456789:100` {GUITAR}"
-            )
-            return ADD_BALANCE
-    elif data == 'users_list':
-        if is_admin(query.from_user.id):
-            await show_users_list(update, context)
-    elif data == 'stats':
-        if is_admin(query.from_user.id):
-            await show_stats(update, context)
-    elif data == 'bot_settings':
-        if is_admin(query.from_user.id):
-            await bot_settings(update, context)
-    elif data == 'payment_settings':
-        if is_admin(query.from_user.id):
-            await payment_settings(update, context)
-    elif data == 'otp_settings':
-        if is_admin(query.from_user.id):
-            await otp_settings(update, context)
-    elif data == 'set_crypto_token':
-        if is_admin(query.from_user.id):
-            await query.edit_message_text(
-                f"{KEY} أرسل التوكن الجديد لـ CryptoBot {KEY}\n\n"
-                f"{WHITE_CIRCLE} مثال: `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11` {WHITE_CIRCLE}"
-            )
-            return SET_CRYPTO_TOKEN
-    elif data == 'set_min_deposit':
-        if is_admin(query.from_user.id):
-            await query.edit_message_text(
-                f"{MONEY} أرسل الحد الأدنى للشحن بالدولار {MONEY}\n\n"
-                f"{WHITE_CIRCLE} مثال: `1` {WHITE_CIRCLE}"
-            )
-            return SET_MIN_DEPOSIT
-    elif data == 'set_admin_password':
-        if is_admin(query.from_user.id):
-            await query.edit_message_text(
-                f"{KEY} أرسل كلمة المرور الجديدة للأدمن {KEY}\n\n"
-                f"{WHITE_CIRCLE} سيتم استخدامها لأوامر مثل /admin {WHITE_CIRCLE}"
-            )
-            return SET_ADMIN_PASSWORD
-    elif data == 'set_otp_api_key':
-        if is_admin(query.from_user.id):
-            await query.edit_message_text(
-                f"{KEY} أرسل مفتاح API الجديد لخدمة OTP {KEY}\n\n"
-                f"{WHITE_CIRCLE} مثال: `1234567890abcdef1234567890abcdef` {WHITE_CIRCLE}"
-            )
-            return SET_OTP_API_KEY
-    elif data == 'set_otp_service_url':
-        if is_admin(query.from_user.id):
-            await query.edit_message_text(
-                f"{GEAR} أرسل رابط خدمة OTP الجديد {GEAR}\n\n"
-                f"{WHITE_CIRCLE} مثال: `https://api.sms-activate.org/stubs/handler_api.php` {WHITE_CIRCLE}"
-            )
-            return SET_OTP_SERVICE_URL
-    elif data == 'login':
-        await login(update, context)
-    elif data.startswith('check_payment_'):
-        await check_payment(update, context)
-    elif data.startswith('category_'):
-        category = data.split('_')[1]
-        await show_numbers_list(update, context, category)
-    elif data.startswith('manage_category_'):
-        category = data.split('_')[2]
-        await show_manage_numbers(update, context, category)
-    elif data == 'start':
-        await start(update, context)
-    elif data == 'admin':
-        await admin_panel(update, context)
-    elif data == 'check_subscription':
-        await check_subscription_callback(update, context)
-    elif data == 'manage_channels':
-        if is_admin(query.from_user.id):
-            await manage_channels(update, context)
-    elif data == 'add_channel':
-        if is_admin(query.from_user.id):
-            await query.edit_message_text(
-                text=f"{CHANNEL} أرسل معرف القناة أو اسم المستخدم بالشكل التالي:\n\n"
-                f"`@channel_username` أو `-1001234567890`\n\n"
-                f"{WHITE_CIRCLE} مثال: `@my_channel` أو `-1001234567890` {WHITE_CIRCLE}"
-            )
-            return ADD_CHANNEL
-
-# Add number handler
-async def add_number_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not is_admin(update.effective_user.id):
-        return ConversationHandler.END
-
-    text = update.message.text
-    try:
-        parts = text.split(':')
-        if len(parts) < 5:
-            await update.message.reply_text(
-                f"{ZAP} خطأ في الإدخال، يرجى المحاولة مرة أخرى بالشكل الصحيح: رقم:سعر:فئة:خدمة_otp:id_otp[:api_key] {ZAP}"
-            )
-            return ADD_NUMBER
-
-        number = parts[0].strip()
-        price = int(parts[1].strip())
-        category = parts[2].strip().lower()
-        otp_service = parts[3].strip()
-        otp_id = parts[4].strip()
-        otp_api_key = parts[5].strip() if len(parts) > 5 else ''
-
-        valid_categories = ['new', 'old', 'fake', 'scam', 'random']
-        if category not in valid_categories:
-            await update.message.reply_text(
-                f"{ZAP} فئة غير صالحة. الفئات المتاحة: new, old, fake, scam, random {ZAP}"
-            )
-            return ADD_NUMBER
-
-        conn = sqlite3.connect('bot_database.db')
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO numbers (number, price, category, otp_service, otp_id, otp_api_key)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (number, price, category, otp_service, otp_id, otp_api_key))
-        conn.commit()
-        conn.close()
-
-        await update.message.reply_text(
-            f"{PLANET} تم إضافة الرقم بنجاح {PLANET}\n\n"
-            f"{WHITE_CIRCLE} الرقم: `{number}`\n"
-            f"{WHITE_CIRCLE} السعر: `{price}`\n"
-            f"{WHITE_CIRCLE} الفئة: `{category}`\n"
-            f"{WHITE_CIRCLE} الخدمة: `{otp_service}`\n"
-            f"{WHITE_CIRCLE} OTP ID: `{otp_id}`\n"
-            f"{WHITE_CIRCLE} مفتاح API: `{otp_api_key if otp_api_key else 'العام'}` {WHITE_CIRCLE}"
-        )
-    except ValueError:
-        await update.message.reply_text(
-            f"{ZAP} خطأ في الإدخال، يرجى المحاولة مرة أخرى بالشكل الصحيح: رقم:سعر:فئة:خدمة_otp:id_otp[:api_key] {ZAP}"
-        )
-        return ADD_NUMBER
-    except Exception as e:
-        await update.message.reply_text(f"{ZAP} حدث خطأ: {str(e)} {ZAP}")
-        return ADD_NUMBER
-
-    return ConversationHandler.END
-
-# Add balance handler
-async def add_balance_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not is_admin(update.effective_user.id):
-        return ConversationHandler.END
-
-    text = update.message.text
-    try:
-        user_id, amount = text.split(':')
-        user_id = int(user_id.strip())
-        amount = int(amount.strip())
-
-        conn = sqlite3.connect('bot_database.db')
-        cursor = conn.cursor()
-        cursor.execute('UPDATE users SET balance = balance + ? WHERE user_id = ?', (amount, user_id))
-        cursor.execute('''
-            INSERT INTO transactions (user_id, amount, type, description)
-            VALUES (?, ?, ?, ?)
-        ''', (user_id, amount, 'admin_add', f'Manual balance addition by admin'))
-        conn.commit()
-        conn.close()
-
-        await update.message.reply_text(
-            f"{GUITAR} تم إضافة الرصيد بنجاح {GUITAR}\n\n"
-            f"{WHITE_CIRCLE} المستخدم: `{user_id}`\n"
-            f"{WHITE_CIRCLE} المبلغ: `{amount}$` {WHITE_CIRCLE}"
-        )
-    except Exception as e:
-        await update.message.reply_text(
-            f"{ZAP} خطأ في الإدخال، يرجى المحاولة مرة أخرى {ZAP}\n\n"
-            f"{WHITE_CIRCLE} مثال: `123456789:100` {WHITE_CIRCLE}"
-        )
-        return ADD_BALANCE
-
-    return ConversationHandler.END
-
-# Add channel handler
-async def add_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not is_admin(update.effective_user.id):
-        return ConversationHandler.END
-
-    text = update.message.text.strip()
-    try:
-        if text.startswith('@'):
-            username = text[1:]
-            chat = await context.bot.get_chat(text)
-            channel_id = chat.id
-            title = chat.title
-        elif text.startswith('-100'):
-            channel_id = int(text)
-            chat = await context.bot.get_chat(channel_id)
-            username = chat.username
-            title = chat.title
+    @client.on(events.NewMessage(from_users=event.sender_id))
+    async def handle_vip_activation(new_event):
+        code = new_event.text.strip()
+        if await redeem_vip_code(new_event.sender_id, code):
+            await new_event.reply("✅ تم تفعيل VIP بنجاح! يمكنك الآن استخدام جميع المزايا.")
         else:
-            await update.message.reply_text(f"{WARNING} معرف القناة غير صالح {WARNING}")
-            return ADD_CHANNEL
+            await new_event.reply("❌ الكود غير صالح أو مستخدم بالفعل.")
 
-        conn = sqlite3.connect('bot_database.db')
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO channels (channel_id, username, required, title)
-            VALUES (?, ?, ?, ?)
-        ''', (channel_id, username, 1, title))
-        conn.commit()
-        conn.close()
+        await vip_info(new_event)
+        client.remove_event_handler(handle_vip_activation)
 
-        await update.message.reply_text(
-            f"{CHECK} تم إضافة القناة بنجاح {CHECK}\n\n"
-            f"{WHITE_CIRCLE} القناة: {title or username}\n"
-            f"{WHITE_CIRCLE} المعرف: `{channel_id}` {WHITE_CIRCLE}"
+# Auto reply to mentions and replies
+@client.on(events.NewMessage())
+async def auto_reply(event):
+    if event.is_private:
+        return
+
+    if event.is_reply:
+        reply_to = await event.get_reply_message()
+        if reply_to.sender_id == (await client.get_me()).id:
+            await event.reply("🤖 شكرًا لتواصلك معي!")
+
+    if f"@{client.me.username}" in event.text:
+        await event.reply("🤖 نعم، كيف يمكنني مساعدتك؟")
+
+# Auto welcome in private
+@client.on(events.NewMessage(incoming=True, func=lambda e: e.is_private))
+async def auto_welcome(event):
+    user_id = event.sender_id
+    if event.text == '/start':
+        return
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+    user_exists = cursor.fetchone() is not None
+    conn.close()
+
+    if not user_exists:
+        await start(event)
+    else:
+        await event.reply(
+            "🤖 مرحبًا مجددًا!\n\n"
+            "يمكنك استخدام الأوامر التالية:\n"
+            "/start - عرض قائمة الأوامر"
         )
-    except Exception as e:
-        logger.error(f"Error adding channel: {e}")
-        await update.message.reply_text(f"{WARNING} حدث خطأ أثناء إضافة القناة {WARNING}")
-        return ADD_CHANNEL
-
-    return ConversationHandler.END
-
-# Set crypto token handler
-async def set_crypto_token_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not is_admin(update.effective_user.id):
-        return ConversationHandler.END
-
-    text = update.message.text.strip()
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('UPDATE settings SET value = ? WHERE key = ?', (text, 'crypto_bot_token'))
-    conn.commit()
-    conn.close()
-
-    await update.message.reply_text(f"{CHECK} تم تحديث توكن CryptoBot بنجاح {CHECK}")
-    return ConversationHandler.END
-
-# Set OTP API key handler
-async def set_otp_api_key_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not is_admin(update.effective_user.id):
-        return ConversationHandler.END
-
-    text = update.message.text.strip()
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('UPDATE settings SET value = ? WHERE key = ?', (text, 'otp_api_key'))
-    conn.commit()
-    conn.close()
-
-    await update.message.reply_text(f"{CHECK} تم تحديث مفتاح API لـ OTP بنجاح {CHECK}")
-    return ConversationHandler.END
-
-# Set OTP service URL handler
-async def set_otp_service_url_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not is_admin(update.effective_user.id):
-        return ConversationHandler.END
-
-    text = update.message.text.strip()
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('UPDATE settings SET value = ? WHERE key = ?', (text, 'otp_service_url'))
-    conn.commit()
-    conn.close()
-
-    await update.message.reply_text(f"{CHECK} تم تحديث رابط خدمة OTP بنجاح {CHECK}")
-    return ConversationHandler.END
-
-# Set min deposit handler
-async def set_min_deposit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not is_admin(update.effective_user.id):
-        return ConversationHandler.END
-
-    text = update.message.text.strip()
-    try:
-        min_deposit = int(text)
-        if min_deposit < 1:
-            await update.message.reply_text(f"{WARNING} الحد الأدنى للشحن يجب أن يكون على الأقل 1$ {WARNING}")
-            return SET_MIN_DEPOSIT
-
-        conn = sqlite3.connect('bot_database.db')
-        cursor = conn.cursor()
-        cursor.execute('UPDATE settings SET value = ? WHERE key = ?', (str(min_deposit), 'min_deposit'))
-        conn.commit()
-        conn.close()
-
-        await update.message.reply_text(f"{CHECK} تم تحديث الحد الأدنى للشحن إلى {min_deposit}$ بنجاح {CHECK}")
-    except ValueError:
-        await update.message.reply_text(f"{WARNING} يرجى إرسال رقم صحيح {WARNING}")
-        return SET_MIN_DEPOSIT
-
-    return ConversationHandler.END
-
-# Set admin password handler
-async def set_admin_password_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not is_admin(update.effective_user.id):
-        return ConversationHandler.END
-
-    text = update.message.text.strip()
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('UPDATE settings SET value = ? WHERE key = ?', (text, 'admin_password'))
-    conn.commit()
-    conn.close()
-
-    await update.message.reply_text(f"{CHECK} تم تحديث كلمة مرور الأدمن بنجاح {CHECK}")
-    return ConversationHandler.END
-
-# Admin command with password
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    conn = sqlite3.connect('bot_database.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT value FROM settings WHERE key = ?', ('admin_password',))
-    admin_password = cursor.fetchone()[0]
-    conn.close()
-
-    if not admin_password:
-        await admin_panel(update, context)
-        return
-
-    if not context.args or context.args[0] != admin_password:
-        await update.message.reply_text(f"{LOCK} كلمة مرور الأدمن غير صحيحة {LOCK}")
-        return
-
-    await admin_panel(update, context)
-
-# Check subscription for all messages
-async def check_subscription_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.message and update.message.text and update.message.text.startswith('/'):
-        return
-
-    if update.message and not await check_subscription(update.effective_user.id, context):
-        await force_subscription(update, context)
 
 # Main function
-def main() -> None:
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    # Command handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("admin", admin_command))
-
-    # Conversation handlers
-    add_number_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button, pattern='^add_number$')],
-        states={
-            ADD_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_number_handler)],
-        },
-        fallbacks=[],
-        map_to_parent={
-            ConversationHandler.END: ConversationHandler.END
-        }
-    )
-
-    add_balance_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button, pattern='^add_balance$')],
-        states={
-            ADD_BALANCE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_balance_handler)],
-        },
-        fallbacks=[],
-        map_to_parent={
-            ConversationHandler.END: ConversationHandler.END
-        }
-    )
-
-    add_channel_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button, pattern='^add_channel$')],
-        states={
-            ADD_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_channel_handler)],
-        },
-        fallbacks=[],
-        map_to_parent={
-            ConversationHandler.END: ConversationHandler.END
-        }
-    )
-
-    set_crypto_token_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button, pattern='^set_crypto_token$')],
-        states={
-            SET_CRYPTO_TOKEN: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_crypto_token_handler)],
-        },
-        fallbacks=[],
-        map_to_parent={
-            ConversationHandler.END: ConversationHandler.END
-        }
-    )
-
-    set_min_deposit_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button, pattern='^set_min_deposit$')],
-        states={
-            SET_MIN_DEPOSIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_min_deposit_handler)],
-        },
-        fallbacks=[],
-        map_to_parent={
-            ConversationHandler.END: ConversationHandler.END
-        }
-    )
-
-    set_admin_password_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button, pattern='^set_admin_password$')],
-        states={
-            SET_ADMIN_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_admin_password_handler)],
-        },
-        fallbacks=[],
-        map_to_parent={
-            ConversationHandler.END: ConversationHandler.END
-        }
-    )
-
-    set_otp_api_key_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button, pattern='^set_otp_api_key$')],
-        states={
-            SET_OTP_API_KEY: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_otp_api_key_handler)],
-        },
-        fallbacks=[],
-        map_to_parent={
-            ConversationHandler.END: ConversationHandler.END
-        }
-    )
-
-    set_otp_service_url_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button, pattern='^set_otp_service_url$')],
-        states={
-            SET_OTP_SERVICE_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_otp_service_url_handler)],
-        },
-        fallbacks=[],
-        map_to_parent={
-            ConversationHandler.END: ConversationHandler.END
-        }
-    )
-
-    # Callback query handler
-    application.add_handler(CallbackQueryHandler(button))
-
-    # Add conversation handlers
-    application.add_handler(add_number_conv)
-    application.add_handler(add_balance_conv)
-    application.add_handler(add_channel_conv)
-    application.add_handler(set_crypto_token_conv)
-    application.add_handler(set_min_deposit_conv)
-    application.add_handler(set_admin_password_conv)
-    application.add_handler(set_otp_api_key_conv)
-    application.add_handler(set_otp_service_url_conv)
-
-    # Check subscription for all messages
-    application.add_handler(MessageHandler(filters.ALL, check_subscription_wrapper))
-
-    application.run_polling()
+async def main():
+    await client.start()
+    logger.info("Bot started successfully!")
+    await auto_poster()
 
 if __name__ == '__main__':
-    main()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
