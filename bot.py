@@ -10,12 +10,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_ID = int(os.getenv("20867472"))
-API_HASH = os.getenv("abedd7fb77eaf1f88bd3f286ea952253")
-BOT_TOKEN = os.getenv("8837648752:AAHICVc71aEknIjgrE_FoOH2nln7oEOSNUA")
-DEVELOPER = os.getenv("DEVELOPER", "Programmer_error")
-FORCE_CHANNEL = os.getenv("FORCE_CHANNEL", "Programmer_error1")
-FORCE_GROUP = os.getenv("FORCE_GROUP", "Programmer_error2")
+API_ID = 20867472"
+API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
+BOT_TOKEN = "8837648752:AAHICVc71aEknIjgrE_FoOH2nln7oEOSNUA"
+DEVELOPER = "Programmer_error"
+FORCE_CHANNEL = "Programmer_error1"
+FORCE_GROUP = "Programmer_error2"
 
 # الايموجي البريميوم بتوعك
 SPARK = '<tg-emoji emoji-id="5884015001206791984">✨</tg-emoji>'
