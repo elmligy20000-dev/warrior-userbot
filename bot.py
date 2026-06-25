@@ -24,8 +24,9 @@ API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
 BOT_TOKEN = "8837648752:AAHICVc71aEknIjgrE_FoOH2nln7oEOSNUA"
 ADMIN_ID = 932862531 
 
-
 bot = TelegramClient('ai_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+
+DB_FILE = 'ai_bot_db.json'
 
 def load_db():
     if os.path.exists(DB_FILE):
