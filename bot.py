@@ -7,7 +7,7 @@ from telethon.sessions import StringSession
 from telethon.tl.functions.channels import LeaveChannelRequest, GetParticipantRequest, JoinChannelRequest
 from telethon.tl.functions.messages import DeleteHistoryRequest, ImportChatInviteRequest
 from telethon.tl.types import ChannelParticipantCreator, ChannelParticipantAdmin
-from telethon.errors import UserNotParticipantError, InviteHashInvalidError, ChannelPrivateError, FloodWaitError, PasswordHashInvalidError
+from telethon.errors import UserNotParticipantError, InviteHashInvalidError, ChannelPrivateError, FloodWaitError, PasswordHashInvalidError, PhoneCodeInvalidError, PhoneCodeExpiredError
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -77,7 +77,7 @@ async def check_subscription(user_id):
 def force_sub_buttons():
     return [
         [Button.url("قناة السورس", f"https://t.me/{FORCE_CHANNEL}")],
-        [Button.url("جروب السورس", f"https://t.me/{FORCE_GROUP}")],
+        [Button.url("جروب الدعم", f"https://t.me/{FORCE_GROUP}")],
         [Button.inline("تحققت من الاشتراك", b"check_sub")]
     ]
 
@@ -151,41 +151,19 @@ async def check_account(event):
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
     uid = event.sender_id
-
     if uid in banned_users:
         return await event.respond("<b>انت محظور من استخدام البوت</b>", parse_mode='html')
-
     if uid!= ADMIN_ID:
         try:
             user = await event.get_sender()
             await bot.send_message(ADMIN_ID, f"<b>دخول جديد للبوت</b>\n<b>الاسم: {user.first_name}</b>\n<b>الايدي: {uid}</b>\n<b>اليوزر: @{user.username or 'لا يوجد'}</b>", parse_mode='html')
         except: pass
-
     if not await check_subscription(uid):
-        return await event.respond(
-            "<b>مرحبا بك في بوت التنظيف الاحترافي</b>\n\n"
-            "<b>هذا البوت يقوم بتنظيف حسابك من القنوات والجروبات والخاص</b>\n"
-            "<b>اشترك في القناة والجروب لفتح البوت</b>",
-            buttons=force_sub_buttons(),
-            parse_mode='html'
-        )
-
+        return await event.respond("<b>مرحبا بك في بوت التنظيف الاحترافي</b>\n\n<b>اشترك في القناة والجروب لفتح البوت</b>", buttons=force_sub_buttons(), parse_mode='html')
     try:
         user = await event.get_sender()
         name_user = user.first_name if user.first_name else "مستخدم"
-
-        welcome_text = (
-            f"<b>اهلا وسهلا {name_user}</b>\n\n"
-            f"<b>بوت تنظيف الحسابات الاحترافي</b>\n\n"
-            f"<b>المميزات:</b>\n"
-            f"<b>• تنظيف الخاص والبوتات حذف من الطرفين</b>\n"
-            f"<b>• مغادرة الجروبات والقنوات باستثناء الادمن</b>\n"
-            f"<b>• جلب روابط القنوات والجروبات</b>\n"
-            f"<b>• انضمام تلقائي لعدد كبير من الروابط</b>\n"
-            f"<b>• لوحة تحكم ادمن متطورة</b>\n\n"
-            f"<b>ابدأ باضافة حسابك من القائمة بالاسفل</b>"
-        )
-
+        welcome_text = f"<b>اهلا وسهلا {name_user}</b>\n\n<b>بوت تنظيف الحسابات الاحترافي</b>\n\n<b>المميزات:</b>\n<b>• تنظيف الخاص والبوتات حذف من الطرفين</b>\n<b>• مغادرة الجروبات والقنوات باستثناء الادمن</b>\n<b>• جلب روابط القنوات والجروبات</b>\n<b>• انضمام تلقائي لعدد كبير من الروابط</b>\n<b>• لوحة تحكم ادمن متطورة</b>\n\n<b>ابدأ باضافة حسابك من القائمة بالاسفل</b>"
         await event.respond(welcome_text, buttons=main_menu(uid), parse_mode='html')
     except Exception:
         await event.respond("<b>البوت جاهز للاستخدام</b>", buttons=main_menu(uid), parse_mode='html')
@@ -246,19 +224,22 @@ async def add_account_phone(event, phone):
     client._init_request.system_version = "iOS 18.0"
     await client.connect()
     try:
-        await client.send_code_request(phone)
-        waiting_state[event.sender_id] = {"step": "code", "client": client, "phone": phone}
-        await msg.edit("<b>تم ارسال الكود</b>\n<b>ابعت كود التفعيل المكون من 5 ارقام</b>", parse_mode='html')
+        sent = await client.send_code_request(phone)
+        waiting_state[event.sender_id] = {"step": "code", "client": client, "phone": phone, "phone_code_hash": sent.phone_code_hash}
+        await msg.edit("<b>تم ارسال الكود</b>\n<b>ابعت كود التفعيل المكون من 5 ارقام</b>\n<b>الكود صالح لمدة 2 دقيقة فقط</b>", parse_mode='html')
+    except FloodWaitError as e:
+        await msg.edit(f"<b>انتظر {e.seconds} ثانية قبل المحاولة</b>", parse_mode='html')
     except Exception as e:
-        await msg.edit(f"<b>حدث خطأ: {e}</b>", parse_mode='html')
+        await msg.edit(f"<b>خطأ في ارسال الكود: {e}</b>", parse_mode='html')
 
 @bot.on(events.NewMessage(func=lambda e: e.sender_id in waiting_state and isinstance(waiting_state[e.sender_id], dict)))
 async def handle_code(event):
     data = waiting_state[event.sender_id]
     if data.get("step") == "code":
-        client, phone = data["client"], data["phone"]
+        client, phone, phone_code_hash = data["client"], data["phone"], data["phone_code_hash"]
+        code = event.text.strip().replace(" ", "")
         try:
-            await client.sign_in(phone, event.text)
+            await client.sign_in(phone, code, phone_code_hash=phone_code_hash)
             me = await client.get_me()
             session_str = client.session.save()
             user_sessions[event.sender_id] = {"client": client, "phone": phone, "user_id": me.id}
@@ -268,8 +249,12 @@ async def handle_code(event):
         except PasswordHashInvalidError:
             waiting_state[event.sender_id]["step"] = "password"
             await event.reply("<b>الحساب محمي بكلمة سر</b>\n<b>ابعت كلمة سر التحقق الثنائي</b>", parse_mode='html')
+        except (PhoneCodeInvalidError, PhoneCodeExpiredError):
+            await event.reply("<b>الكود غلط او انتهت صلاحيته</b>\n<b>اطلب كود جديد من /start</b>", parse_mode='html')
+            del waiting_state[event.sender_id]
         except Exception as e:
-            await event.reply(f"<b>خطأ في الكود: {e}</b>", parse_mode='html')
+            await event.reply(f"<b>خطأ: {e}</b>", parse_mode='html')
+            del waiting_state[event.sender_id]
 
 @bot.on(events.NewMessage(func=lambda e: e.sender_id in waiting_state and isinstance(waiting_state[e.sender_id], dict) and waiting_state[e.sender_id].get("step")=="password"))
 async def handle_password(event):
@@ -624,17 +609,7 @@ async def del_account(event):
 @bot.on(events.CallbackQuery(data=b"features"))
 async def features(event):
     if not await check_subscription(event.sender_id): return
-    text = (
-        "<b>مميزات البوت</b>\n\n"
-        "<b>• امان كامل وتشفير</b>\n"
-        "<b>• سرعة عالية في التنظيف</b>\n"
-        "<b>• جلب جميع الروابط بملف txt</b>\n"
-        "<b>• انضمام تلقائي 1000 رابط</b>\n"
-        "<b>• لوحة ادمن متطورة كاملة</b>\n"
-        "<b>• دعم السيشن والرقم</b>\n"
-        "<b>• اسم جلسة iPhone 17 Pro</b>\n"
-        "<b>• اشتراك اجباري قناة + جروب</b>"
-    )
+    text = "<b>مميزات البوت</b>\n\n<b>• امان كامل وتشفير</b>\n<b>• سرعة عالية في التنظيف</b>\n<b>• جلب جميع الروابط بملف txt</b>\n<b>• انضمام تلقائي 1000 رابط</b>\n<b>• لوحة ادمن متطورة كاملة</b>\n<b>• دعم السيشن والرقم</b>\n<b>• اسم جلسة iPhone 17 Pro</b>\n<b>• اشتراك اجباري قناة + جروب</b>"
     await event.edit(text, buttons=[[Button.inline("رجوع للقائمة", b"back")]], parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"back"))
