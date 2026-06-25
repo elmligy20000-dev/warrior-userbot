@@ -6,13 +6,15 @@ import os
 import requests
 import json
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 
-# Enable logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+# Load environment variables
+load_dotenv()
 
+# Bot Configuration - Set your variables here or in .env file
+BOT_TOKEN = "8914045842:AAEz6MNsGTShwob_M3H0ECy8eOkl2nT5gno"
+DEVELOPER_ID = 932862531
+DEVELOPER_USERNAME = "Programmer_error"
 # Database setup
 def init_db():
     conn = sqlite3.connect('bot_database.db')
@@ -85,14 +87,12 @@ def init_db():
     cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ('admin_password', ''))
     cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ('otp_api_key', ''))
     cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ('otp_service_url', 'https://api.sms-activate.org/stubs/handler_api.php'))
+    # Set developer as admin
+    cursor.execute('INSERT OR IGNORE INTO users (user_id, username, is_admin) VALUES (?, ?, 1)', (DEVELOPER_ID, DEVELOPER_USERNAME))
     conn.commit()
     conn.close()
 
 init_db()
-API_ID = 20867472
-API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
-BOT_TOKEN = "8914045842:AAEz6MNsGTShwob_M3H0ECy8eOkl2nT5gno"
-ADMIN_ID = 932862531
 
 # Premium Emoji constants
 COMPUTER = "<tg-emoji emoji-id=\"5886664420502805908\">💻</tg-emoji>"
@@ -125,6 +125,12 @@ GEAR = "<tg-emoji emoji-id=\"5886360482847137486\">⚙️</tg-emoji>"
 GRAPH = "<tg-emoji emoji-id=\"5886360482847137487\">📊</tg-emoji>"
 SHIELD = "<tg-emoji emoji-id=\"5886360482847137488\">🛡️</tg-emoji>"
 GIFT = "<tg-emoji emoji-id=\"5886360482847137489\">🎁</tg-emoji>"
+
+# Enable logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # Admin check
 def is_admin(user_id):
@@ -690,7 +696,7 @@ def button(update: Update, context: CallbackContext):
     elif query.data == 'my_account':
         show_my_account(update, context)
     elif query.data == 'support':
-        query.edit_message_text(text=f"{ZAP} للدعم الفني، يرجى التواصل مع @support {ZAP}", parse_mode=ParseMode.HTML)
+        query.edit_message_text(text=f"{ZAP} للدعم الفني، يرجى التواصل مع @{DEVELOPER_USERNAME} {ZAP}", parse_mode=ParseMode.HTML)
     elif query.data == 'deposit':
         deposit(update, context)
     elif query.data == 'add_number':
@@ -1490,7 +1496,7 @@ def admin_command(update: Update, context: CallbackContext):
 
 # Main function
 def main():
-    updater = Updater("8914045842:AAEz6MNsGTShwob_M3H0ECy8eOkl2nT5gno", use_context=True)
+    updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
