@@ -7,20 +7,20 @@ from telethon.sessions import StringSession
 from telethon.tl.functions.channels import LeaveChannelRequest, GetParticipantRequest, JoinChannelRequest
 from telethon.tl.functions.messages import DeleteHistoryRequest, ImportChatInviteRequest
 from telethon.tl.types import ChannelParticipantCreator, ChannelParticipantAdmin
-from telethon.errors import UserNotParticipantError, InviteHashInvalidError
+from telethon.errors import UserNotParticipantError, InviteHashInvalidError, ChannelPrivateError, FloodWaitError
 from dotenv import load_dotenv
 
 load_dotenv()
 
-API_ID = 20867472
-API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
-BOT_TOKEN = "8837648752:AAHICVc71aEknIjgrE_FoOH2nln7oEOSNUA"
-DEVELOPER = "Programmer_error"
-FORCE_CHANNEL = "Programmer_error1"
-FORCE_GROUP = "Programmer_error2"
-ADMIN_ID = 932862531
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+DEVELOPER = os.getenv("DEVELOPER", "username_dev")
+FORCE_CHANNEL = os.getenv("FORCE_CHANNEL", "channel_username")
+FORCE_GROUP = os.getenv("FORCE_GROUP", "group_username")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "932862531"))
 
-# الايموجي البريميوم
+# الايموجي البريميوم - للاستخدام في كل البوت عدا الاستارت
 PC = '<tg-emoji emoji-id="5886664420502805908">💻</tg-emoji>'
 DICE = '<tg-emoji emoji-id="5886716969427672960">🎲</tg-emoji>'
 LEAF = '<tg-emoji emoji-id="5886462183377739675">🌿</tg-emoji>'
@@ -39,6 +39,7 @@ CHECK = '<tg-emoji emoji-id="5886345304115969449">✅</tg-emoji>'
 ROCKET = '<tg-emoji emoji-id="5886426509378198">🚀</tg-emoji>'
 CAT = '<tg-emoji emoji-id="5886470240736387171">🐈</tg-emoji>'
 SIGNAL = '<tg-emoji emoji-id="5886386768046988787">📶</tg-emoji>'
+CROWN = '<tg-emoji emoji-id="5886402792366505817">👑</tg-emoji>'
 
 bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 user_sessions = {}
@@ -48,27 +49,29 @@ banned_users = set()
 # قاعدة البيانات
 conn = sqlite3.connect('database.db', check_same_thread=False)
 cur = conn.cursor()
-cur.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, phone TEXT, session TEXT, join_date TEXT)''')
-cur.execute('''CREATE TABLE IF NOT EXISTS banned (user_id INTEGER PRIMARY KEY)''')
-cur.execute('''CREATE TABLE IF NOT EXISTS stats (id INTEGER PRIMARY KEY, total_clean INTEGER DEFAULT 0)''')
+cur.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, phone TEXT, session TEXT, join_date TEXT, username TEXT)''')
+cur.execute('''CREATE TABLE IF NOT EXISTS banned (user_id INTEGER PRIMARY KEY, reason TEXT, date TEXT)''')
+cur.execute('''CREATE TABLE IF NOT EXISTS stats (id INTEGER PRIMARY KEY, total_clean INTEGER DEFAULT 0, total_users INTEGER DEFAULT 0)''')
 cur.execute('INSERT OR IGNORE INTO stats (id) VALUES (1)')
 conn.commit()
 
 for row in cur.execute('SELECT user_id FROM banned'):
     banned_users.add(row[0])
 
-async def save_user(user_id, phone, session_str):
-    cur.execute('INSERT OR REPLACE INTO users VALUES (?,?,?,?)',
-                (user_id, phone, session_str, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+async def save_user(user_id, phone, session_str, username):
+    cur.execute('INSERT OR REPLACE INTO users VALUES (?,?,?,?,?)',
+                (user_id, phone, session_str, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), username))
+    conn.commit()
+    cur.execute('UPDATE stats SET total_users = (SELECT COUNT(*) FROM users) WHERE id=1')
     conn.commit()
 
 def get_user_info(user_id):
-    cur.execute('SELECT phone, session, join_date FROM users WHERE user_id=?', (user_id,))
+    cur.execute('SELECT phone, session, join_date, username FROM users WHERE user_id=?', (user_id,))
     return cur.fetchone()
 
-def ban_user(user_id):
+def ban_user(user_id, reason="بدون سبب"):
     banned_users.add(user_id)
-    cur.execute('INSERT OR REPLACE INTO banned VALUES (?)', (user_id,))
+    cur.execute('INSERT OR REPLACE INTO banned VALUES (?,?,?)', (user_id, reason, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
 
 def unban_user(user_id):
@@ -96,7 +99,7 @@ def force_sub_buttons():
     return [
         [Button.url("📢 قناة السورس", f"https://t.me/{FORCE_CHANNEL}")],
         [Button.url("👥 جروب السورس", f"https://t.me/{FORCE_GROUP}")],
-        [Button.inline("✅ تحققت", b"check_sub")]
+        [Button.inline("✅ تحققت من الاشتراك", b"check_sub")]
     ]
 
 def main_menu(user_id):
@@ -122,44 +125,44 @@ def clean_menu_buttons():
         [Button.inline("🤖 تنظيف البوتات", b"clean_bots")],
         [Button.inline("💣 تنظيف الكل", b"clean_all")],
         [Button.inline("🗑️ حذف الحساب", b"del_account")],
-        [Button.inline("🔙 رجوع", b"back")]
+        [Button.inline("🔙 رجوع للقائمة", b"back")]
     ]
 
 def fetch_menu_buttons():
     return [
-        [Button.inline("📢 جلب قنوات", b"fetch_channels")],
-        [Button.inline("👥 جلب جروبات", b"fetch_groups")],
-        [Button.inline("🤖 جلب بوتات", b"fetch_bots")],
+        [Button.inline("📢 جلب القنوات", b"fetch_channels")],
+        [Button.inline("👥 جلب الجروبات", b"fetch_groups")],
+        [Button.inline("🤖 جلب البوتات", b"fetch_bots")],
         [Button.inline("📋 جلب الكل", b"fetch_all")],
-        [Button.inline("🔙 رجوع", b"back")]
+        [Button.inline("🔙 رجوع للقائمة", b"back")]
     ]
 
 def join_menu_buttons():
     return [
         [Button.inline("📢 انضمام قنوات", b"join_channels")],
         [Button.inline("👥 انضمام جروبات", b"join_groups")],
-        [Button.inline("🔙 رجوع", b"back")]
+        [Button.inline("🔙 رجوع للقائمة", b"back")]
     ]
 
 def admin_panel_buttons():
     return [
-        [Button.inline("📊 احصائيات", b"admin_stats")],
+        [Button.inline("📊 الاحصائيات", b"admin_stats")],
         [Button.inline("👥 كل المستخدمين", b"admin_users")],
-        [Button.inline("🔍 بحث مستخدم", b"admin_search")],
+        [Button.inline("🔍 بحث عن مستخدم", b"admin_search")],
         [Button.inline("🚫 حظر مستخدم", b"admin_ban")],
-        [Button.inline("✅ الغاء حظر", b"admin_unban")],
-        [Button.inline("📢 اذاعة", b"admin_broadcast")],
+        [Button.inline("✅ فك الحظر", b"admin_unban")],
+        [Button.inline("📢 اذاعة رسالة", b"admin_broadcast")],
         [Button.inline("💾 نسخة احتياطية", b"admin_backup")],
-        [Button.inline("🔙 رجوع", b"back")]
+        [Button.inline("🔙 رجوع للقائمة", b"back")]
     ]
 
 async def check_account(event):
     uid = event.sender_id
     if uid in banned_users:
-        await event.answer(f"{STAR}{LOCK} انت محظور{STAR}", alert=True)
+        await event.answer(f"{STAR}{LOCK} انت محظور من البوت{STAR}", alert=True)
         return None
     if not await check_subscription(uid):
-        await event.edit(f"{STAR}{LOCK} <b>اشتراك إجباري</b> {LOCK}{STAR}", buttons=force_sub_buttons(), parse_mode='html')
+        await event.edit(f"{STAR}{LOCK} <b>اشتراك إجباري</b> {LOCK}{STAR}\n{STAR}اشترك في القناة والجروب الأول{STAR}", buttons=force_sub_buttons(), parse_mode='html')
         return None
     if uid not in user_sessions:
         await event.answer(f"{STAR}{USER} ضيف حسابك الأول{STAR}", alert=True)
@@ -169,23 +172,21 @@ async def check_account(event):
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
     uid = event.sender_id
-    
-    # تحقق الحظر الاول
-    if uid in banned_users:
-        return await event.respond(f"{STAR}{LOCK} انت محظور من البوت{STAR}")
 
-    # اشعار دخول للادمن
+    if uid in banned_users:
+        return await event.respond("🚫 انت محظور من استخدام البوت")
+
     if uid!= ADMIN_ID:
         try:
             user = await event.get_sender()
-            await bot.send_message(ADMIN_ID, f"{STAR}{DOVE} دخول جديد{STAR}\n{STAR}الاسم: {user.first_name}\nالايدي: {uid}\nاليوزر: @{user.username or 'لا يوجد'}{STAR}")
+            await bot.send_message(ADMIN_ID, f"{STAR}{DOVE} دخول جديد للبوت{STAR}\n{STAR}الاسم: {user.first_name}\nالايدي: {uid}\nاليوزر: @{user.username or 'لا يوجد'}{STAR}")
         except: pass
 
-    # تحقق الاشتراك
     if not await check_subscription(uid):
         return await event.respond(
-            f"{STAR}{PLANET} <b>مرحباً بك في بوت التنظيف الاحترافي</b> {PLANET}{STAR}\n\n"
-            f"{STAR}اشترك في القناة والجروب لفتح البوت{STAR}",
+            "<b>مرحباً بك في بوت التنظيف الاحترافي</b>\n\n"
+            "هذا البوت يقوم بتنظيف حسابك من القنوات والجروبات والخاص\n"
+            "اشترك في القناة والجروب لفتح البوت",
             buttons=force_sub_buttons(),
             parse_mode='html'
         )
@@ -195,23 +196,27 @@ async def start(event):
         name_user = user.first_name if user.first_name else "مستخدم"
 
         welcome_text = (
-            f"{STAR}{ROCKET} <b>أهلاً {name_user}</b> {ROCKET}{STAR}\n\n"
-            f"{STAR}{PLANET} بوت تنظيف الحسابات الاحترافي{STAR}\n\n"
-            f"{STAR}{BOLT} سريع وآمن 100%{STAR}\n\n"
-            f"{STAR}{SIGNAL} ابدأ باضافة حسابك{STAR}"
+            f"<b>أهلاً وسهلاً {name_user}</b>\n\n"
+            f"<b>بوت تنظيف الحسابات الاحترافي</b>\n\n"
+            f"<b>المميزات:</b>\n"
+            f"<b>• تنظيف الخاص والبوتات حذف من الطرفين</b>\n"
+            f"<b>• مغادرة الجروبات والقنوات باستثناء الادمن</b>\n"
+            f"<b>• جلب روابط القنوات والجروبات</b>\n"
+            f"<b>• انضمام تلقائي لعدد كبير من الروابط</b>\n"
+            f"<b>• لوحة تحكم ادمن متطورة</b>\n\n"
+            f"<b>ابدأ باضافة حسابك من القائمة بالأسفل</b>"
         )
 
-        await event.respond(welcome_text, buttons=main_menu(), parse_mode='html')
-    except Exception as e:
-        # لو حصل اي خطأ ابعت رسالة بسيطة عشان البوت ميقعش
-        await event.respond(f"{STAR}البوت جاهز{STAR}", buttons=main_menu())
-        
+        await event.respond(welcome_text, buttons=main_menu(uid), parse_mode='html')
+    except Exception:
+        await event.respond("<b>البوت جاهز للاستخدام</b>", buttons=main_menu(uid), parse_mode='html')
+
 @bot.on(events.CallbackQuery(data=b"check_sub"))
 async def check_sub(event):
     if await check_subscription(event.sender_id):
-        await event.edit(f"{STAR}{CHECK} <b>تم التحقق</b> {CHECK}{STAR}", buttons=main_menu(event.sender_id), parse_mode='html')
+        await event.edit(f"{STAR}{CHECK} <b>تم التحقق بنجاح</b> {CHECK}{STAR}\n{STAR}يمكنك الآن استخدام البوت{STAR}", buttons=main_menu(event.sender_id), parse_mode='html')
     else:
-        await event.answer(f"{STAR}{LOCK} لسه مشتركتش{STAR}", alert=True)
+        await event.answer(f"{STAR}{LOCK} لسه مشتركتش في القناة والجروب{STAR}", alert=True)
 
 @bot.on(events.CallbackQuery(data=b"my_info"))
 async def my_info(event):
@@ -222,21 +227,22 @@ async def my_info(event):
     phone = info[0] if info else "غير معروف"
     session = info[1] if info else "غير معروف"
     date = info[2] if info else "غير معروف"
-    session_short = session[:25] + "..." if len(session) > 25 else session
-    text = f"{STAR}{USER} <b>معلومات حسابك</b> {USER}{STAR}\n\n{STAR}الرقم: {phone}{STAR}\n{STAR}السيشن: `{session_short}`{STAR}\n{STAR}التاريخ: {date}{STAR}"
-    await event.edit(text, buttons=[[Button.inline("🔙 رجوع", b"back")]], parse_mode='html')
+    username = info[3] if info else "لا يوجد"
+    session_short = session[:30] + "..." if len(session) > 30 else session
+    text = f"{STAR}{USER} <b>معلومات حسابك</b> {USER}{STAR}\n\n{STAR}الرقم: {phone}{STAR}\n{STAR}اليوزر: @{username}{STAR}\n{STAR}السيشن: `{session_short}`{STAR}\n{STAR}تاريخ الاضافة: {date}{STAR}"
+    await event.edit(text, buttons=[[Button.inline("🔙 رجوع للقائمة", b"back")]], parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"add_phone"))
 async def add_phone(event):
     if not await check_subscription(event.sender_id): return
     waiting_state[event.sender_id] = "phone"
-    await event.edit(f"{STAR}{USER} ابعت رقمك: +2010xxxxxxx{STAR}\n{STAR}او /cancel{STAR}")
+    await event.edit(f"{STAR}{USER} ابعت رقمك بصيغة دولية: +2010xxxxxxx{STAR}\n{STAR}او ابعت /cancel للإلغاء{STAR}")
 
 @bot.on(events.CallbackQuery(data=b"add_session"))
 async def add_session(event):
     if not await check_subscription(event.sender_id): return
     waiting_state[event.sender_id] = "session"
-    await event.edit(f"{STAR}{PC} ابعت Session String{STAR}\n{STAR}او /cancel{STAR}")
+    await event.edit(f"{STAR}{PC} ابعت Session String الخاص بحسابك{STAR}\n{STAR}او ابعت /cancel للإلغاء{STAR}")
 
 @bot.on(events.NewMessage(func=lambda e: e.sender_id in waiting_state))
 async def handle_input(event):
@@ -254,7 +260,7 @@ async def handle_input(event):
         await add_account_session(event, event.text)
 
 async def add_account_phone(event, phone):
-    msg = await event.reply(f"{STAR}{SIGNAL} جاري ارسال الكود...{STAR}")
+    msg = await event.reply(f"{STAR}{SIGNAL} جاري ارسال كود التفعيل...{STAR}")
     client = TelegramClient(StringSession(), API_ID, API_HASH)
     client._init_request.app_version = "iPhone 17 Pro"
     client._init_request.device_model = "iPhone 17 Pro"
@@ -263,9 +269,9 @@ async def add_account_phone(event, phone):
     try:
         await client.send_code_request(phone)
         waiting_state[event.sender_id] = {"step": "code", "client": client, "phone": phone}
-        await msg.edit(f"{STAR}ابعت كود التفعيل{STAR}")
+        await msg.edit(f"{STAR}تم ارسال الكود{STAR}\n{STAR}ابعت كود التفعيل المكون من 5 ارقام{STAR}")
     except Exception as e:
-        await msg.edit(f"{STAR}خطأ: {e}{STAR}")
+        await msg.edit(f"{STAR}حدث خطأ: {e}{STAR}")
 
 @bot.on(events.NewMessage(func=lambda e: e.sender_id in waiting_state and isinstance(waiting_state[e.sender_id], dict)))
 async def handle_code(event):
@@ -277,12 +283,12 @@ async def handle_code(event):
             me = await client.get_me()
             session_str = client.session.save()
             user_sessions[event.sender_id] = {"client": client, "phone": phone, "user_id": me.id}
-            await save_user(event.sender_id, phone, session_str)
+            await save_user(event.sender_id, phone, session_str, me.username or "")
             del waiting_state[event.sender_id]
-            await event.reply(f"{STAR}{CHECK} تم الربط بنجاح{STAR}\n{STAR}الرقم: {phone}{STAR}", buttons=clean_menu_buttons())
+            await event.reply(f"{STAR}{CHECK} تم ربط الحساب بنجاح{STAR}\n{STAR}الرقم: {phone}{STAR}\n{STAR}الاسم: {me.first_name}{STAR}", buttons=clean_menu_buttons())
         except:
             waiting_state[event.sender_id]["step"] = "password"
-            await event.reply(f"{STAR}{LOCK} ابعت كلمة سر التحقق{STAR}")
+            await event.reply(f"{STAR}{LOCK} الحساب محمي بكلمة سر{STAR}\n{STAR}ابعت كلمة سر التحقق الثنائي{STAR}")
 
 @bot.on(events.NewMessage(func=lambda e: e.sender_id in waiting_state and isinstance(waiting_state[e.sender_id], dict) and waiting_state[e.sender_id].get("step")=="password"))
 async def handle_password(event):
@@ -293,11 +299,11 @@ async def handle_password(event):
         me = await client.get_me()
         session_str = client.session.save()
         user_sessions[event.sender_id] = {"client": client, "phone": phone, "user_id": me.id}
-        await save_user(event.sender_id, phone, session_str)
+        await save_user(event.sender_id, phone, session_str, me.username or "")
         del waiting_state[event.sender_id]
-        await event.reply(f"{STAR}{CHECK} تم الربط بنجاح{STAR}", buttons=clean_menu_buttons())
+        await event.reply(f"{STAR}{CHECK} تم ربط الحساب بنجاح{STAR}", buttons=clean_menu_buttons())
     except Exception as e:
-        await event.reply(f"{STAR}خطأ: {e}{STAR}")
+        await event.reply(f"{STAR}كلمة السر غلط: {e}{STAR}")
 
 async def add_account_session(event, session_str):
     msg = await event.reply(f"{STAR}{PC} جاري فحص السيشن...{STAR}")
@@ -308,36 +314,38 @@ async def add_account_session(event, session_str):
         client._init_request.system_version = "iOS 18.0"
         await client.connect()
         if not await client.is_user_authorized():
-            return await msg.edit(f"{STAR}السيشن منتهي{STAR}")
+            return await msg.edit(f"{STAR}السيشن منتهي الصلاحية{STAR}")
         me = await client.get_me()
         user_sessions[event.sender_id] = {"client": client, "phone": me.phone, "user_id": me.id}
-        await save_user(event.sender_id, me.phone, session_str)
-        await msg.edit(f"{STAR}{CHECK} تم الربط بنجاح{STAR}\n{STAR}الاسم: {me.first_name}{STAR}", buttons=clean_menu_buttons())
+        await save_user(event.sender_id, me.phone, session_str, me.username or "")
+        await msg.edit(f"{STAR}{CHECK} تم ربط الحساب بنجاح{STAR}\n{STAR}الاسم: {me.first_name}\nالرقم: {me.phone}{STAR}", buttons=clean_menu_buttons())
     except Exception as e:
-        await msg.edit(f"{STAR}خطأ: {e}{STAR}")
+        await msg.edit(f"{STAR}خطأ في السيشن: {e}{STAR}")
 
 @bot.on(events.CallbackQuery(data=b"clean_menu"))
 async def clean_menu(event):
     client = await check_account(event)
     if not client: return
-    await event.edit(f"{STAR}{PLANET} <b>اختر التنظيف</b> {PLANET}{STAR}", buttons=clean_menu_buttons(), parse_mode='html')
+    await event.edit(f"{STAR}{PLANET} <b>اختر نوع التنظيف</b> {PLANET}{STAR}\n{STAR}ملاحظة: البوتات والخاص حذف من الطرفين{STAR}", buttons=clean_menu_buttons(), parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"clean_private"))
 async def clean_private(event):
     client = await check_account(event)
     if not client: return
-    msg = await event.edit(f"{STAR}{CAT} جاري حذف الخاص...{STAR}", parse_mode='html')
+    msg = await event.edit(f"{STAR}{CAT} جاري حذف محادثات الخاص...{STAR}", parse_mode='html')
     count = 0
     async for dialog in client.iter_dialogs():
         if dialog.is_user and not dialog.entity.bot:
             try:
                 await client(DeleteHistoryRequest(peer=dialog.id, max_id=0, just_clear=False, revoke=True))
                 count += 1
-                await msg.edit(f"{STAR}{CAT} تم: {count}{STAR}", parse_mode='html')
+                await msg.edit(f"{STAR}{CAT} تم حذف: {count} محادثة{STAR}", parse_mode='html')
                 await asyncio.sleep(1.5)
+            except FloodWaitError as e:
+                await asyncio.sleep(e.seconds)
             except: pass
     update_stats()
-    await msg.edit(f"{STAR}{CHECK} انتهى: {count} محادثة{STAR}", buttons=clean_menu_buttons(), parse_mode='html')
+    await msg.edit(f"{STAR}{CHECK} انتهى التنظيف{STAR}\n{STAR}تم حذف: {count} محادثة خاص{STAR}", buttons=clean_menu_buttons(), parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"clean_groups"))
 async def clean_groups(event):
@@ -354,11 +362,13 @@ async def clean_groups(event):
                     continue
                 await client(LeaveChannelRequest(dialog.id))
                 left += 1
-                await msg.edit(f"{STAR}{USER} خرجت: {left} | تخطيت: {skipped}{STAR}", parse_mode='html')
+                await msg.edit(f"{STAR}{USER} خرجت من: {left} | تخطيت: {skipped}{STAR}", parse_mode='html')
                 await asyncio.sleep(2)
+            except FloodWaitError as e:
+                await asyncio.sleep(e.seconds)
             except: pass
     update_stats()
-    await msg.edit(f"{STAR}{CHECK} انتهى: خرجت {left} | سبت {skipped}{STAR}", buttons=clean_menu_buttons(), parse_mode='html')
+    await msg.edit(f"{STAR}{CHECK} انتهى التنظيف{STAR}\n{STAR}خرجت من: {left} جروب\nتخطيت: {skipped} جروب ادمن{STAR}", buttons=clean_menu_buttons(), parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"clean_channels"))
 async def clean_channels(event):
@@ -375,59 +385,66 @@ async def clean_channels(event):
                     continue
                 await client(LeaveChannelRequest(dialog.id))
                 left += 1
-                await msg.edit(f"{STAR}{PLANET} خرجت: {left} | تخطيت: {skipped}{STAR}", parse_mode='html')
+                await msg.edit(f"{STAR}{PLANET} خرجت من: {left} | تخطيت: {skipped}{STAR}", parse_mode='html')
                 await asyncio.sleep(2)
+            except FloodWaitError as e:
+                await asyncio.sleep(e.seconds)
             except: pass
     update_stats()
-    await msg.edit(f"{STAR}{CHECK} انتهى: خرجت {left} | سبت {skipped}{STAR}", buttons=clean_menu_buttons(), parse_mode='html')
+    await msg.edit(f"{STAR}{CHECK} انتهى التنظيف{STAR}\n{STAR}خرجت من: {left} قناة\nتخطيت: {skipped} قناة ادمن{STAR}", buttons=clean_menu_buttons(), parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"clean_bots"))
 async def clean_bots(event):
     client = await check_account(event)
     if not client: return
-    msg = await event.edit(f"{STAR}{PC} جاري حذف البوتات...{STAR}", parse_mode='html')
+    msg = await event.edit(f"{STAR}{PC} جاري حذف محادثات البوتات...{STAR}", parse_mode='html')
     count = 0
     async for dialog in client.iter_dialogs():
         if dialog.is_user and dialog.entity.bot:
             try:
                 await client(DeleteHistoryRequest(peer=dialog.id, max_id=0, just_clear=False, revoke=True))
                 count += 1
-                await msg.edit(f"{STAR}{PC} تم: {count}{STAR}", parse_mode='html')
+                await msg.edit(f"{STAR}{PC} تم حذف: {count} بوت{STAR}", parse_mode='html')
                 await asyncio.sleep(1)
+            except FloodWaitError as e:
+                await asyncio.sleep(e.seconds)
             except: pass
     update_stats()
-    await msg.edit(f"{STAR}{CHECK} انتهى: {count} بوت{STAR}", buttons=clean_menu_buttons(), parse_mode='html')
+    await msg.edit(f"{STAR}{CHECK} انتهى التنظيف{STAR}\n{STAR}تم حذف: {count} محادثة بوت{STAR}", buttons=clean_menu_buttons(), parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"clean_all"))
 async def clean_all(event):
     client = await check_account(event)
     if not client: return
-    buttons = [[Button.inline("✅ متأكد", b"confirm_all")], [Button.inline("❌ إلغاء", b"clean_menu")]]
-    await event.edit(f"{STAR}{BOLT} <b>تحذير: هيمسح الكل</b> {BOLT}{STAR}", buttons=buttons, parse_mode='html')
+    buttons = [[Button.inline("✅ نعم متأكد امسح الكل", b"confirm_all")], [Button.inline("❌ إلغاء", b"clean_menu")]]
+    await event.edit(f"{STAR}{BOLT} <b>تحذير هام</b> {BOLT}{STAR}\n{STAR}هذه العملية ستحذف كل شيء: القنوات والجروبات والخاص والبوتات{STAR}\n{STAR}هل انت متأكد؟{STAR}", buttons=buttons, parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"confirm_all"))
 async def confirm_all(event):
-    await event.edit(f"{STAR}{ROCKET} بدء التنظيف...{STAR}", parse_mode='html')
+    await event.edit(f"{STAR}{ROCKET} بدء التنظيف الشامل...{STAR}", parse_mode='html')
     await clean_channels(event); await asyncio.sleep(3)
     await clean_groups(event); await asyncio.sleep(3)
     await clean_private(event); await asyncio.sleep(3)
     await clean_bots(event)
-    await event.respond(f"{STAR}{CHECK} تم التنظيف الكامل{STAR}", buttons=clean_menu_buttons(), parse_mode='html')
+    await event.respond(f"{STAR}{CHECK} تم التنظيف الكامل بنجاح{STAR}\n{STAR}حسابك أصبح نظيف 100%{STAR}", buttons=clean_menu_buttons(), parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"fetch_menu"))
 async def fetch_menu(event):
     client = await check_account(event)
     if not client: return
-    await event.edit(f"{STAR}{DICE} اختر ما تريد جلبه{STAR}", buttons=fetch_menu_buttons(), parse_mode='html')
+    await event.edit(f"{STAR}{DICE} اختر ما تريد جلبه من حسابك{STAR}", buttons=fetch_menu_buttons(), parse_mode='html')
 
 async def fetch_and_send(event, filter_func, name):
     client = await check_account(event)
     if not client: return
-    msg = await event.edit(f"{STAR}جاري جلب {name}...{STAR}", parse_mode='html')
+    msg = await event.edit(f"{STAR}{STAR} جاري جلب {name}... انتظر{STAR}", parse_mode='html')
     links = []
     async for dialog in client.iter_dialogs():
-        if filter_func(dialog) and dialog.entity.username:
-            links.append(f"https://t.me/{dialog.entity.username}")
+        if filter_func(dialog):
+            if dialog.entity.username:
+                links.append(f"https://t.me/{dialog.entity.username}")
+            else:
+                links.append(f"{dialog.name} - ID: {dialog.id}")
     if len(links) > 50:
         file = f"{name}_{event.sender_id}.txt"
         with open(file, 'w', encoding='utf-8') as f:
@@ -436,7 +453,8 @@ async def fetch_and_send(event, filter_func, name):
         os.remove(file)
         await msg.delete()
     else:
-        await msg.edit(f"{STAR}{name}:\n" + '\n'.join(links) + f"\n\n{STAR}العدد: {len(links)}{STAR}")
+        text = f"{STAR}{name}:{STAR}\n" + '\n'.join(links[:50]) + f"\n\n{STAR}العدد الكلي: {len(links)}{STAR}"
+        await msg.edit(text)
 
 @bot.on(events.CallbackQuery(data=b"fetch_channels"))
 async def fetch_channels(event):
@@ -463,13 +481,17 @@ async def join_menu(event):
     client = await check_account(event)
     if not client: return
     waiting_state[event.sender_id] = "join_links"
-    await event.edit(f"{STAR}{ROCKET} ابعت الروابط/اليوزر/الايدي كل سطر{STAR}\n{STAR}حتى 1000 رابط{STAR}")
+    await event.edit(f"{STAR}{ROCKET} ابعت الروابط/اليوزر/الايدي كل واحد في سطر{STAR}\n{STAR}يدعم حتى 1000 رابط{STAR}\n{STAR}مثال:\nhttps://t.me/channel\n@username\n-1001234567890{STAR}")
 
 @bot.on(events.NewMessage(func=lambda e: waiting_state.get(e.sender_id)=="join_links"))
 async def handle_join(event):
+    if event.text == '/cancel':
+        del waiting_state[event.sender_id]
+        await event.reply(f"{STAR}تم الإلغاء{STAR}", buttons=main_menu(event.sender_id))
+        return
     client = user_sessions[event.sender_id]["client"]
     links = event.text.split('\n')
-    msg = await event.reply(f"{STAR}جاري الانضمام...{STAR}")
+    msg = await event.reply(f"{STAR}{ROCKET} جاري الانضمام...{STAR}")
     success, fail = 0, 0
     for link in links[:1000]:
         link = link.strip()
@@ -478,21 +500,26 @@ async def handle_join(event):
             if "t.me/joinchat/" in link or "t.me/+" in link:
                 hash = link.split('/')[-1]
                 await client(ImportChatInviteRequest(hash))
+            elif link.startswith('-100') or link.isdigit():
+                await client(JoinChannelRequest(int(link)))
             else:
                 username = link.replace("https://t.me/", "").replace("@", "")
                 await client(JoinChannelRequest(username))
             success += 1
             await asyncio.sleep(3)
+        except FloodWaitError as e:
+            await asyncio.sleep(e.seconds)
+            fail += 1
         except:
             fail += 1
             await asyncio.sleep(2)
     del waiting_state[event.sender_id]
-    await msg.edit(f"{STAR}{CHECK} انتهى{STAR}\n{STAR}نجح: {success}\nفشل: {fail}{STAR}", buttons=join_menu_buttons())
+    await msg.edit(f"{STAR}{CHECK} انتهى الانضمام{STAR}\n{STAR}نجح: {success}\nفشل: {fail}{STAR}", buttons=join_menu_buttons())
 
 @bot.on(events.CallbackQuery(data=b"admin_panel"))
 async def admin_panel(event):
     if event.sender_id!= ADMIN_ID: return
-    await event.edit(f"{STAR}{PC} <b>لوحة الأدمن</b> {PC}{STAR}", buttons=admin_panel_buttons(), parse_mode='html')
+    await event.edit(f"{STAR}{CROWN} <b>لوحة تحكم الأدمن</b> {CROWN}{STAR}", buttons=admin_panel_buttons(), parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"admin_stats"))
 async def admin_stats(event):
@@ -503,33 +530,34 @@ async def admin_stats(event):
     banned_count = cur.fetchone()[0]
     cur.execute('SELECT total_clean FROM stats WHERE id=1')
     total_clean = cur.fetchone()[0]
-    text = f"{STAR}{BOLT} <b>الاحصائيات</b> {BOLT}{STAR}\n\n{STAR}المستخدمين: {total_users}{STAR}\n{STAR}المحظورين: {banned_count}{STAR}\n{STAR}العمليات: {total_clean}{STAR}"
+    text = f"{STAR}{BOLT} <b>احصائيات البوت</b> {BOLT}{STAR}\n\n{STAR}اجمالي المستخدمين: {total_users}{STAR}\n{STAR}المحظورين: {banned_count}{STAR}\n{STAR}عمليات التنظيف: {total_clean}{STAR}"
     await event.edit(text, buttons=admin_panel_buttons(), parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"admin_users"))
 async def admin_users(event):
     if event.sender_id!= ADMIN_ID: return
-    cur.execute('SELECT user_id, phone FROM users')
+    cur.execute('SELECT user_id, phone, username FROM users ORDER BY user_id DESC LIMIT 50')
     users = cur.fetchall()
     if not users:
-        return await event.edit(f"{STAR}مفيش مستخدمين{STAR}", buttons=admin_panel_buttons())
-    text = f"{STAR}{USER} <b>المستخدمين</b> {USER}{STAR}\n\n"
-    for uid, phone in users[:30]:
+        return await event.edit(f"{STAR}مفيش مستخدمين مسجلين{STAR}", buttons=admin_panel_buttons())
+    text = f"{STAR}{USER} <b>آخر 50 مستخدم</b> {USER}{STAR}\n\n"
+    for uid, phone, username in users:
         status = "🚫" if uid in banned_users else "✅"
-        text += f"{STAR}{status} {uid} | {phone}{STAR}\n"
+        user_display = f"@{username}" if username else phone
+        text += f"{STAR}{status} {uid} | {user_display}{STAR}\n"
     await event.edit(text, buttons=admin_panel_buttons(), parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"admin_search"))
 async def admin_search(event):
     if event.sender_id!= ADMIN_ID: return
     waiting_state[event.sender_id] = "search_user"
-    await event.edit(f"{STAR}ابعت ايدي المستخدم{STAR}")
+    await event.edit(f"{STAR}ابعت ايدي المستخدم للبحث عنه{STAR}")
 
 @bot.on(events.CallbackQuery(data=b"admin_ban"))
 async def admin_ban(event):
     if event.sender_id!= ADMIN_ID: return
     waiting_state[event.sender_id] = "ban_user"
-    await event.edit(f"{STAR}ابعت ايدي المستخدم للحظر{STAR}")
+    await event.edit(f"{STAR}ابعت ايدي المستخدم للحظر{STAR}\n{STAR}مثال: 123456789 سبب الحظر{STAR}")
 
 @bot.on(events.CallbackQuery(data=b"admin_unban"))
 async def admin_unban(event):
@@ -541,60 +569,63 @@ async def admin_unban(event):
 async def admin_broadcast(event):
     if event.sender_id!= ADMIN_ID: return
     waiting_state[event.sender_id] = "broadcast"
-    await event.edit(f"{STAR}ابعت الرسالة للإذاعة{STAR}")
+    await event.edit(f"{STAR}ابعت الرسالة اللي عايز تذيعها لكل المستخدمين{STAR}")
 
 @bot.on(events.CallbackQuery(data=b"admin_backup"))
 async def admin_backup(event):
     if event.sender_id!= ADMIN_ID: return
-    await event.edit(f"{STAR}{PC} جاري انشاء النسخة...{STAR}")
-    await bot.send_file(event.sender_id, 'database.db', caption=f"{STAR}نسخة {datetime.now().strftime('%Y-%m-%d %H:%M')}{STAR}")
+    await event.edit(f"{STAR}{PC} جاري انشاء النسخة الاحتياطية...{STAR}")
+    await bot.send_file(event.sender_id, 'database.db', caption=f"{STAR}نسخة احتياطية بتاريخ {datetime.now().strftime('%Y-%m-%d %H:%M')}{STAR}")
 
 @bot.on(events.NewMessage(func=lambda e: e.sender_id == ADMIN_ID and e.sender_id in waiting_state))
 async def admin_handler(event):
     state = waiting_state[event.sender_id]
     if state == "search_user":
         try:
-            uid = int(event.text)
+            uid = int(event.text.split()[0])
             info = get_user_info(uid)
             if info:
                 status = "🚫 محظور" if uid in banned_users else "✅ شغال"
-                text = f"{STAR}{USER} <b>معلومات</b> {USER}{STAR}\n{STAR}الايدي: {uid}{STAR}\n{STAR}الرقم: {info[0]}{STAR}\n{STAR}السيشن: `{info[1]}`{STAR}\n{STAR}التاريخ: {info[2]}{STAR}\n{STAR}الحالة: {status}{STAR}"
+                text = f"{STAR}{USER} <b>معلومات المستخدم</b> {USER}{STAR}\n{STAR}الايدي: {uid}{STAR}\n{STAR}الرقم: {info[0]}{STAR}\n{STAR}اليوزر: @{info[3]}{STAR}\n{STAR}السيشن: `{info[1][:30]}...`{STAR}\n{STAR}تاريخ الاضافة: {info[2]}{STAR}\n{STAR}الحالة: {status}{STAR}"
             else:
-                text = f"{STAR}غير موجود{STAR}"
+                text = f"{STAR}المستخدم غير موجود في قاعدة البيانات{STAR}"
             del waiting_state[event.sender_id]
             await event.reply(text, parse_mode='html', buttons=admin_panel_buttons())
         except:
-            await event.reply(f"{STAR}ايدي غلط{STAR}")
+            await event.reply(f"{STAR}صيغة الايدي غلط{STAR}")
     elif state == "ban_user":
         try:
-            uid = int(event.text)
-            ban_user(uid)
+            parts = event.text.split(' ', 1)
+            uid = int(parts[0])
+            reason = parts[1] if len(parts) > 1 else "بدون سبب"
+            ban_user(uid, reason)
             del waiting_state[event.sender_id]
-            await event.reply(f"{STAR}{LOCK} تم حظر {uid}{STAR}", buttons=admin_panel_buttons())
-            try: await bot.send_message(uid, f"{STAR}{LOCK} تم حظرك{STAR}")
+            await event.reply(f"{STAR}{LOCK} تم حظر {uid}{STAR}\n{STAR}السبب: {reason}{STAR}", buttons=admin_panel_buttons())
+            try: await bot.send_message(uid, f"{STAR}{LOCK} تم حظرك من البوت{STAR}\n{STAR}السبب: {reason}{STAR}")
             except: pass
         except:
-            await event.reply(f"{STAR}ايدي غلط{STAR}")
+            await event.reply(f"{STAR}صيغة غلط. مثال: 123456789 سبب الحظر{STAR}")
     elif state == "unban_user":
         try:
             uid = int(event.text)
             unban_user(uid)
             del waiting_state[event.sender_id]
-            await event.reply(f"{STAR}{CHECK} تم فك الحظر {uid}{STAR}", buttons=admin_panel_buttons())
+            await event.reply(f"{STAR}{CHECK} تم فك الحظر عن {uid}{STAR}", buttons=admin_panel_buttons())
         except:
             await event.reply(f"{STAR}ايدي غلط{STAR}")
     elif state == "broadcast":
         msg = event.text
         del waiting_state[event.sender_id]
         cur.execute('SELECT user_id FROM users')
-        sent = 0
+        sent, failed = 0, 0
         for (uid,) in cur.fetchall():
             try:
-                await bot.send_message(uid, f"{STAR}{BOLT} <b>اذاعة</b> {BOLT}{STAR}\n\n{msg}", parse_mode='html')
+                await bot.send_message(uid, f"{STAR}{BOLT} <b>اذاعة من المطور</b> {BOLT}{STAR}\n\n{msg}", parse_mode='html')
                 sent += 1
                 await asyncio.sleep(0.1)
-            except: pass
-        await event.reply(f"{STAR}{CHECK} تم الارسال لـ {sent}{STAR}", buttons=admin_panel_buttons())
+            except:
+                failed += 1
+        await event.reply(f"{STAR}{CHECK} تم الارسال{STAR}\n{STAR}وصل: {sent}\nفشل: {failed}{STAR}", buttons=admin_panel_buttons())
 
 @bot.on(events.CallbackQuery(data=b"del_account"))
 async def del_account(event):
@@ -603,19 +634,53 @@ async def del_account(event):
         del user_sessions[event.sender_id]
         cur.execute('DELETE FROM users WHERE user_id=?', (event.sender_id,))
         conn.commit()
-        await event.edit(f"{STAR}{CHECK} تم الحذف{STAR}", buttons=main_menu(event.sender_id))
+        await event.edit(f"{STAR}{CHECK} تم حذف الحساب بنجاح{STAR}", buttons=main_menu(event.sender_id))
     else:
-        await event.answer(f"{STAR}مفيش حساب{STAR}", alert=True)
+        await event.answer(f"{STAR}مفيش حساب مضاف للحذف{STAR}", alert=True)
 
 @bot.on(events.CallbackQuery(data=b"features"))
 async def features(event):
     if not await check_subscription(event.sender_id): return
-    text = f"{STAR}{BOLT} <b>مميزات</b> {BOLT}{STAR}\n\n{STAR}{LOCK} امان كامل{STAR}\n{STAR}{ROCKET} سرعة عالية{STAR}\n{STAR}{DICE} جلب روابط{STAR}\n{STAR}{ROCKET} انضمام تلقائي{STAR}\n{STAR}{PC} لوحة ادمن{STAR}"
-    await event.edit(text, buttons=[[Button.inline("🔙 رجوع", b"back")]], parse_mode='html')
+    text = (
+        f"{STAR}{BOLT} <b>مميزات البوت</b> {BOLT}{STAR}\n\n"
+        f"{STAR}{LOCK} امان كامل وتشفير{STAR}\n"
+        f"{STAR}{ROCKET} سرعة عالية في التنظيف{STAR}\n"
+        f"{STAR}{DICE} جلب جميع الروابط بملف txt{STAR}\n"
+        f"{STAR}{ROCKET} انضمام تلقائي 1000 رابط{STAR}\n"
+        f"{STAR}{PC} لوحة ادمن متطورة كاملة{STAR}\n"
+        f"{STAR}{CROWN} دعم السيشن والرقم{STAR}\n"
+        f"{STAR}{SIGNAL} اسم جلسة iPhone 17 Pro{STAR}\n"
+        f"{STAR}{SPARK} اشتراك اجباري قناة + جروب{STAR}"
+    )
+    await event.edit(text, buttons=[[Button.inline("🔙 رجوع للقائمة", b"back")]], parse_mode='html')
 
 @bot.on(events.CallbackQuery(data=b"back"))
 async def back(event):
-    await event.edit(f"{STAR}{PLANET} <b>الرئيسية</b> {PLANET}{STAR}", buttons=main_menu(event.sender_id), parse_mode='html')
+    uid = event.sender_id
+    await event.edit(f"{STAR}{PLANET} <b>القائمة الرئيسية</b> {PLANET}{STAR}", buttons=main_menu(uid), parse_mode='html')
 
-print("Bot is running...")
-bot.run_until_disconnected()
+@bot.on(events.CallbackQuery(data=b"join_channels"))
+async def join_channels(event):
+    client = await check_account(event)
+    if not client: return
+    waiting_state[event.sender_id] = "join_links"
+    await event.edit(f"{STAR}{PLANET} ابعت روابط القنوات فقط كل سطر رابط{STAR}\n{STAR}مثال: https://t.me/channelname{STAR}")
+
+@bot.on(events.CallbackQuery(data=b"join_groups"))
+async def join_groups(event):
+    client = await check_account(event)
+    if not client: return
+    waiting_state[event.sender_id] = "join_links"
+    await event.edit(f"{STAR}{USER} ابعت روابط الجروبات فقط كل سطر رابط{STAR}\n{STAR}مثال: https://t.me/joinchat/xxxxx{STAR}")
+
+# تشغيل البوت
+print(f"{STAR}البوت شغال الآن...{STAR}")
+print(f"{STAR}المطور: @{DEVELOPER}{STAR}")
+print(f"{STAR}قناة الاشتراك: @{FORCE_CHANNEL}{STAR}")
+print(f"{STAR}جروب الاشتراك: @{FORCE_GROUP}{STAR}")
+
+try:
+    bot.run_until_disconnected()
+except KeyboardInterrupt:
+    print(f"{STAR}تم ايقاف البوت{STAR}")
+    conn.close()
