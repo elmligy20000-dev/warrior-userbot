@@ -734,7 +734,7 @@ async def generate_vip_code_prompt(event):
         buttons=buttons
     )
 
-@client.on(events.CallbackQuery(data=re.compile(b'vip_(\d+)_days')))
+@client.on(events.CallbackQuery(data=re.compile(br'vip_(\d+)_days')))
 async def handle_vip_code_generation(event):
     duration = int(event.data_match.group(1).decode('utf-8'))
     code = await generate_vip_code(duration)
