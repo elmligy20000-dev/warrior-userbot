@@ -83,7 +83,6 @@ def force_sub_buttons():
 
 def main_menu(user_id):
     buttons = [
-        [Button.inline("اضافة حساب برقم", b"add_phone")],
         [Button.inline("اضافة حساب بسيشن", b"add_session")],
         [Button.inline("قائمة التنظيف", b"clean_menu")],
         [Button.inline("جلب الروابط", b"fetch_menu")],
@@ -189,12 +188,6 @@ async def my_info(event):
     text = f"<b>معلومات حسابك</b>\n\n<b>الرقم: {phone}</b>\n<b>اليوزر: @{username}</b>\n<b>السيشن: `{session_short}`</b>\n<b>تاريخ الاضافة: {date}</b>"
     await event.edit(text, buttons=[[Button.inline("رجوع للقائمة", b"back")]], parse_mode='html')
 
-@bot.on(events.CallbackQuery(data=b"add_phone"))
-async def add_phone(event):
-    if not await check_subscription(event.sender_id): return
-    waiting_state[event.sender_id] = "phone"
-    await event.edit("<b>ابعت رقمك بصيغة دولية: +2010xxxxxxx</b>\n<b>او ابعت /cancel للالغاء</b>", parse_mode='html')
-
 @bot.on(events.CallbackQuery(data=b"add_session"))
 async def add_session(event):
     if not await check_subscription(event.sender_id): return
@@ -215,63 +208,6 @@ async def handle_input(event):
     elif state == "session":
         del waiting_state[uid]
         await add_account_session(event, event.text)
-
-async def add_account_phone(event, phone):
-    msg = await event.reply("<b>جاري ارسال كود التفعيل...</b>", parse_mode='html')
-    client = TelegramClient(StringSession(), API_ID, API_HASH)
-    client._init_request.app_version = "iPhone 17 Pro"
-    client._init_request.device_model = "iPhone 17 Pro"
-    client._init_request.system_version = "iOS 18.0"
-    await client.connect()
-    try:
-        sent = await client.send_code_request(phone)
-        waiting_state[event.sender_id] = {"step": "code", "client": client, "phone": phone, "phone_code_hash": sent.phone_code_hash}
-        await msg.edit("<b>تم ارسال الكود</b>\n<b>ابعت كود التفعيل المكون من 5 ارقام</b>\n<b>الكود صالح لمدة 2 دقيقة فقط</b>", parse_mode='html')
-    except FloodWaitError as e:
-        await msg.edit(f"<b>انتظر {e.seconds} ثانية قبل المحاولة</b>", parse_mode='html')
-    except Exception as e:
-        await msg.edit(f"<b>خطأ في ارسال الكود: {e}</b>", parse_mode='html')
-
-@bot.on(events.NewMessage(func=lambda e: e.sender_id in waiting_state and isinstance(waiting_state[e.sender_id], dict)))
-async def handle_code(event):
-    data = waiting_state[event.sender_id]
-    if data.get("step") == "code":
-        client, phone, phone_code_hash = data["client"], data["phone"], data["phone_code_hash"]
-        code = event.text.strip().replace(" ", "")
-        try:
-            await client.sign_in(phone, code, phone_code_hash=phone_code_hash)
-            me = await client.get_me()
-            session_str = client.session.save()
-            user_sessions[event.sender_id] = {"client": client, "phone": phone, "user_id": me.id}
-            await save_user(event.sender_id, phone, session_str, me.username or "")
-            del waiting_state[event.sender_id]
-            await event.reply(f"<b>تم ربط الحساب بنجاح</b>\n<b>الرقم: {phone}</b>\n<b>الاسم: {me.first_name}</b>", buttons=clean_menu_buttons(), parse_mode='html')
-        except PasswordHashInvalidError:
-            waiting_state[event.sender_id]["step"] = "password"
-            await event.reply("<b>الحساب محمي بكلمة سر</b>\n<b>ابعت كلمة سر التحقق الثنائي</b>", parse_mode='html')
-        except (PhoneCodeInvalidError, PhoneCodeExpiredError):
-            await event.reply("<b>الكود غلط او انتهت صلاحيته</b>\n<b>اطلب كود جديد من /start</b>", parse_mode='html')
-            del waiting_state[event.sender_id]
-        except Exception as e:
-            await event.reply(f"<b>خطأ: {e}</b>", parse_mode='html')
-            del waiting_state[event.sender_id]
-
-@bot.on(events.NewMessage(func=lambda e: e.sender_id in waiting_state and isinstance(waiting_state[e.sender_id], dict) and waiting_state[e.sender_id].get("step")=="password"))
-async def handle_password(event):
-    data = waiting_state[event.sender_id]
-    client, phone = data["client"], data["phone"]
-    try:
-        await client.sign_in(password=event.text)
-        me = await client.get_me()
-        session_str = client.session.save()
-        user_sessions[event.sender_id] = {"client": client, "phone": phone, "user_id": me.id}
-        await save_user(event.sender_id, phone, session_str, me.username or "")
-        del waiting_state[event.sender_id]
-        await event.reply("<b>تم ربط الحساب بنجاح</b>", buttons=clean_menu_buttons(), parse_mode='html')
-    except PasswordHashInvalidError:
-        await event.reply("<b>كلمة السر غلط. حاول تاني</b>", parse_mode='html')
-    except Exception as e:
-        await event.reply(f"<b>خطأ: {e}</b>", parse_mode='html')
 
 async def add_account_session(event, session_str):
     msg = await event.reply("<b>جاري فحص السيشن...</b>", parse_mode='html')
@@ -407,12 +343,28 @@ async def fetch_and_send(event, filter_func, name):
     if not client: return
     msg = await event.edit(f"<b>جاري جلب {name}... انتظر</b>", parse_mode='html')
     links = []
-    async for dialog in client.iter_dialogs():
-        if filter_func(dialog):
-            if dialog.entity.username:
-                links.append(f"https://t.me/{dialog.entity.username}")
-            else:
-                links.append(f"{dialog.name} - ID: {dialog.id}")
+    
+    # التعديل هنا: نجيب كل الديالوجز بالكامل
+    offset_id = 0
+    while True:
+        dialogs = await client.get_dialogs(offset_id=offset_id, limit=100)
+        if not dialogs:
+            break
+        
+        for dialog in dialogs:
+            if filter_func(dialog):
+                if dialog.entity.username:
+                    links.append(f"https://t.me/{dialog.entity.username}")
+                else:
+                    links.append(f"{dialog.name} - ID: {dialog.id}")
+        
+        offset_id = dialogs[-1].id
+        await msg.edit(f"<b>جاري جلب {name}... تم جمع {len(links)}</b>", parse_mode='html')
+        await asyncio.sleep(1)  # عشان ميحصلش فلود
+
+    if not links:
+        return await msg.edit(f"<b>مفيش {name} في حسابك</b>", buttons=fetch_menu_buttons(), parse_mode='html')
+
     if len(links) > 50:
         file = f"{name}_{event.sender_id}.txt"
         with open(file, 'w', encoding='utf-8') as f:
