@@ -16,7 +16,7 @@ import aiohttp
 # ===== بيانات البوت =====
 API_ID = 20867472
 API_HASH = 'abedd7fb77eaf1f88bd3f286ea952253'
-BOT_TOKEN = '8837648752:AAGFBdtxSdUryqAHRIaAYfbbmxi2Ds-ZOoQ'
+BOT_TOKEN = '8297404281:AAHTXZA7L-Cu-23biUlF4dObxHvHMvamwuE'
 ADMIN_ID = 932862531
 DEVELOPER_USERNAME = 'Programmer_error'
 DEVELOPER_LINK = f'https://t.me/{DEVELOPER_USERNAME}'
@@ -27,18 +27,27 @@ DB_FILE = 'database.json'
 BACKUP_FILE = 'sessions_backup.json'
 MAX_ACCOUNTS_PER_USER = 5
 
-# الايموجي البريميوم
-SPARK = '<b><tg-emoji emoji-id="5884015001206791984">✨</tg-emoji></b>'
-DICE = '<b><tg-emoji emoji-id="5886716969427672960">🎲</tg-emoji></b>'
-SUN = '<b><tg-emoji emoji-id="5884250988184870485">🔅</tg-emoji></b>'
-BOLT = '<b><tg-emoji emoji-id="5886360482847137476">⚡️</tg-emoji></b>'
-SIGNAL = '<b><tg-emoji emoji-id="5886386768046988787">📶</tg-emoji></b>'
-GHOST = '<b><tg-emoji emoji-id="5883969276984959097">👾</tg-emoji></b>'
-ROCKET = '<b><tg-emoji emoji-id="5886426509379378198">🚀</tg-emoji></b>'
+# الايموجي الجديد
+COIN = '<b><tg-emoji emoji-id="5888778978931516532">🪙</tg-emoji></b>'
+BRIEFCASE = '<b><tg-emoji emoji-id="5888519365338341318">💼</tg-emoji></b>'
+SWAP = '<b><tg-emoji emoji-id="5888728865253106531">↕️</tg-emoji></b>'
+WAVE = '<b><tg-emoji emoji-id="5888462401187093796">👋</tg-emoji></b>'
+CAT_FACE = '<b><tg-emoji emoji-id="5888786503714217834">😺</tg-emoji></b>'
+PARTY = '<b><tg-emoji emoji-id="5886658755440943371">🥳</tg-emoji></b>'
+COIN2 = '<b><tg-emoji emoji-id="5888833838548787248">🪙</tg-emoji></b>'
+BED = '<b><tg-emoji emoji-id="5888647432673173244">🛏️</tg-emoji></b>'
+PARACHUTE = '<b><tg-emoji emoji-id="5888847655458578303">🪂</tg-emoji></b>'
+MASK = '<b><tg-emoji emoji-id="5888495828917559128">🎭</tg-emoji></b>'
+DISCO = '<b><tg-emoji emoji-id="5889018182840100211">🪩</tg-emoji></b>'
+SHOPPING = '<b><tg-emoji emoji-id="5888535956797006002">🛒</tg-emoji></b>'
+MEDAL = '<b><tg-emoji emoji-id="5888688827567973439">🏅</tg-emoji></b>'
+ID_CARD = '<b><tg-emoji emoji-id="5888971608214740766">🪪</tg-emoji></b>'
+BRIEFCASE2 = '<b><tg-emoji emoji-id="5888875817559138298">💼</tg-emoji></b>'
+MEDAL2 = '<b><tg-emoji emoji-id="5888496159630040589">🏅</tg-emoji></b>'
+MEDAL3 = '<b><tg-emoji emoji-id="5888767623037984662">🏅</tg-emoji></b>'
+FIST = '<b><tg-emoji emoji-id="5888528603812995132">👊</tg-emoji></b>'
 USER = '<b><tg-emoji emoji-id="5886695331382435915">👤</tg-emoji></b>'
 PC = '<b><tg-emoji emoji-id="5886664420502805908">💻</tg-emoji></b>'
-PLANET = '<b><tg-emoji emoji-id="5886449487454416104">🪐</tg-emoji></b>'
-CAT = '<b><tg-emoji emoji-id="5886470240736387171">🐈</tg-emoji></b>'
 LOCK = '<b><tg-emoji emoji-id="5886403208292071168">🔒</tg-emoji></b>'
 UNLOCK = '<b><tg-emoji emoji-id="5886403208292071170">🔓</tg-emoji></b>'
 FOLDER = '<b><tg-emoji emoji-id="5886403208292071172">📁</tg-emoji></b>'
@@ -302,10 +311,10 @@ def main_menu(uid):
     user = get_user_data(uid)
     accounts_count = len(user['accounts'])
 
-    text = f"{SPARK} <b>لوحة التحكم الرئيسية</b> {GHOST}\n\n"
+    text = f"{DISCO} <b>لوحة التحكم الرئيسية</b> {DISCO}\n\n"
     text += f"{USER} <b>الاشتراك:</b> {get_remaining_days(uid)} يوم متبقي\n"
-    text += f"{ROCKET} <b>الحسابات:</b> {accounts_count}/{MAX_ACCOUNTS_PER_USER}\n\n"
-    text += f"{BOLT} <b>اختر حساب للنشر:</b>"
+    text += f"{COIN} <b>الحسابات:</b> {accounts_count}/{MAX_ACCOUNTS_PER_USER}\n\n"
+    text += f"{MEDAL} <b>اختر حساب للنشر:</b>"
 
     btns = []
     for acc_id, acc in user['accounts'].items():
@@ -339,14 +348,14 @@ def account_menu(uid, account_id):
         elif msg['text']: return "نص"
         else: return "فارغ"
 
-    text = f"{SPARK} <b>إعدادات الحساب: {acc['name']}</b>\n\n"
+    text = f"{DISCO} <b>إعدادات الحساب: {acc['name']}</b>\n\n"
     text += f"{USER} <b>الرقم:</b> <code>{acc['phone']}</code>\n"
-    text += f"{ROCKET} <b>الرسائل المرسلة:</b> {acc['sent_count']}\n"
-    text += f"{DICE} <b>الجروبات:</b> {len(acc['groups'])}\n"
-    text += f"{SIGNAL} <b>الحالة:</b> {'يعمل' if acc['active'] else 'متوقف'}\n"
-    text += f"{SUN} <b>حماية الفلود:</b> مستوى {user['flood_protection']}\n"
-    text += f"{GHOST} <b>وضع التخفي:</b> {STEALTH_MODES[user['stealth_mode']]['name']}\n\n"
-    text += f"{BOLT} <b>الرسائل:</b>\n"
+    text += f"{COIN} <b>الرسائل المرسلة:</b> {acc['sent_count']}\n"
+    text += f"{BRIEFCASE} <b>الجروبات:</b> {len(acc['groups'])}\n"
+    text += f"{MEDAL} <b>الحالة:</b> {'يعمل' if acc['active'] else 'متوقف'}\n"
+    text += f"{SHOPPING} <b>حماية الفلود:</b> مستوى {user['flood_protection']}\n"
+    text += f"{PARACHUTE} <b>وضع التخفي:</b> {STEALTH_MODES[user['stealth_mode']]['name']}\n\n"
+    text += f"{MEDAL3} <b>الرسائل:</b>\n"
     text += f"1. {get_msg_status(msg1)}\n"
     text += f"2. {get_msg_status(msg2)}\n"
     text += f"3. {get_msg_status(msg3)}\n"
@@ -374,10 +383,10 @@ def general_settings_menu(uid):
     stealth = STEALTH_MODES[user['stealth_mode']]['name']
 
     text = f"{SETTINGS} <b>الإعدادات العامة</b>\n\n"
-    text += f"{SUN} <b>حماية الفلود:</b> {flood_level}\n"
-    text += f"{GHOST} <b>وضع التخفي:</b> {stealth}\n"
+    text += f"{SHOPPING} <b>حماية الفلود:</b> {flood_level}\n"
+    text += f"{PARACHUTE} <b>وضع التخفي:</b> {stealth}\n"
     text += f"{USER} <b>الرد التلقائي:</b> {reply_status}\n"
-    text += f"{ROCKET} <b>رسالة الترحيب:</b> {welcome_status}\n"
+    text += f"{COIN} <b>رسالة الترحيب:</b> {welcome_status}\n"
 
     btns = [
         [Button.inline(f"حماية الفلود", b"flood_level")],
@@ -462,9 +471,9 @@ async def get_user_client(uid, account_id):
 async def log_error(uid, error_text, account_id=None):
     try:
         if account_id:
-            await bot.send_message(uid, f"{SIGNAL} <b>تشخيص الحساب {account_id}:</b>\n\n{error_text}", parse_mode='html')
+            await bot.send_message(uid, f"{MEDAL2} <b>تشخيص الحساب {account_id}:</b>\n\n{error_text}", parse_mode='html')
         else:
-            await bot.send_message(uid, f"{SIGNAL} <b>تشخيص:</b>\n\n{error_text}", parse_mode='html')
+            await bot.send_message(uid, f"{MEDAL2} <b>تشخيص:</b>\n\n{error_text}", parse_mode='html')
     except:
         pass
 
@@ -486,10 +495,10 @@ async def start(event):
 
     is_sub, not_joined = await check_force_sub(uid)
     if not is_sub:
-        text = f"{BOLT} <b>عشان تستخدم البوت لازم تشترك هنا:</b>\n\n"
+        text = f"{COIN} <b>عشان تستخدم البوت لازم تشترك هنا:</b>\n\n"
         btns = []
         for typ, link in not_joined:
-            text += f"{SIGNAL} {typ}: {link}\n"
+            text += f"{MEDAL} {typ}: {link}\n"
             btns.append([Button.url(f"اشترك في {typ}", f"https://t.me/{link.replace('@', '')}")])
         btns.append([Button.inline(f"تحققت", b"check_sub")])
         await event.reply(text, buttons=btns, parse_mode='html')
@@ -503,7 +512,7 @@ async def start(event):
                 [Button.url(f"اشترك هنا اولا", f"https://t.me/{channel}")],
                 [Button.inline(f"تحققت", b"check_sub")]
             ]
-            await event.reply(f"{SPARK} <b>اشترك في القناة اولا</b>", buttons=btns, parse_mode='html')
+            await event.reply(f"{DISCO} <b>اشترك في القناة اولا</b>", buttons=btns, parse_mode='html')
             return
 
     text, btns = main_menu(uid)
@@ -539,7 +548,7 @@ async def callback(event):
             return
 
         waiting_for[uid] = 'add_account_session'
-        await safe_edit(event, f"{USER} <b>أرسل جلسة الحساب (String Session):</b>\n\n{SIGNAL} للحصول على الجلسة:\n1. استخدم بوت @SessionStringBot\n2. أرسل /get\n3. انسخ الجلسة وأرسلها هنا\n\n{BOLT} <b>هام:</b> لا ترسل أي بيانات حساسة غير الجلسة", buttons=[[Button.inline(f"رجوع", b"back_main")]])
+        await safe_edit(event, f"{USER} <b>أرسل جلسة الحساب (String Session):</b>\n\n{MEDAL} للحصول على الجلسة:\n1. استخدم بوت @SessionStringBot\n2. أرسل /get\n3. انسخ الجلسة وأرسلها هنا\n\n{COIN} <b>هام:</b> لا ترسل أي بيانات حساسة غير الجلسة", buttons=[[Button.inline(f"رجوع", b"back_main")]])
         return
 
     elif data == 'general_settings':
@@ -554,22 +563,22 @@ async def callback(event):
 
     elif data == 'msg1':
         waiting_for[uid] = 'msg1'
-        await safe_edit(event, f"{SIGNAL} <b>أرسل الرسالة الأولى:</b>\n\n{BOLT} يمكنك إرسال نص مع إيموجي بريميوم أو ملصق\n{SPARK} البوت سيحفظها وينشرها تلقائياً", buttons=[[Button.inline(f"رجوع", b"back_main")]])
+        await safe_edit(event, f"{MEDAL} <b>أرسل الرسالة الأولى:</b>\n\n{COIN} يمكنك إرسال نص مع إيموجي بريميوم أو ملصق\n{DISCO} البوت سيحفظها وينشرها تلقائياً", buttons=[[Button.inline(f"رجوع", b"back_main")]])
         return
 
     elif data == 'msg2':
         waiting_for[uid] = 'msg2'
-        await safe_edit(event, f"{SIGNAL} <b>أرسل الرسالة الثانية:</b>\n\n{BOLT} يمكنك إرسال نص مع إيموجي بريميوم أو ملصق\n{SPARK} البوت سيبدل بينها تلقائياً", buttons=[[Button.inline(f"رجوع", b"back_main")]])
+        await safe_edit(event, f"{MEDAL} <b>أرسل الرسالة الثانية:</b>\n\n{COIN} يمكنك إرسال نص مع إيموجي بريميوم أو ملصق\n{DISCO} البوت سيبدل بينها تلقائياً", buttons=[[Button.inline(f"رجوع", b"back_main")]])
         return
 
     elif data == 'msg3':
         waiting_for[uid] = 'msg3'
-        await safe_edit(event, f"{SIGNAL} <b>أرسل الرسالة الثالثة:</b>\n\n{BOLT} يمكنك إرسال نص مع إيموجي بريميوم أو ملصق", buttons=[[Button.inline(f"رجوع", b"back_main")]])
+        await safe_edit(event, f"{MEDAL} <b>أرسل الرسالة الثالثة:</b>\n\n{COIN} يمكنك إرسال نص مع إيموجي بريميوم أو ملصق", buttons=[[Button.inline(f"رجوع", b"back_main")]])
         return
 
     elif data == 'msg4':
         waiting_for[uid] = 'msg4'
-        await safe_edit(event, f"{SIGNAL} <b>أرسل الرسالة الرابعة:</b>\n\n{BOLT} يمكنك إرسال نص مع إيموجي بريميوم أو ملصق", buttons=[[Button.inline(f"رجوع", b"back_main")]])
+        await safe_edit(event, f"{MEDAL} <b>أرسل الرسالة الرابعة:</b>\n\n{COIN} يمكنك إرسال نص مع إيموجي بريميوم أو ملصق", buttons=[[Button.inline(f"رجوع", b"back_main")]])
         return
 
     elif data == 'toggle_reply':
@@ -592,9 +601,9 @@ async def callback(event):
 
     elif data == 'set_reply_msg':
         waiting_for[uid] = 'reply_msg'
-        text = f"{SIGNAL} <b>أرسل رسالة الرد التلقائي:</b>\n\n"
-        text += f"{BOLT} <b>هذه الرسالة سترسل عند المنشن أو الرد عليك</b>\n"
-        text += f"{SPARK} <b>يمكنك استخدام إيموجي بريميوم</b>"
+        text = f"{MEDAL} <b>أرسل رسالة الرد التلقائي:</b>\n\n"
+        text += f"{COIN} <b>هذه الرسالة سترسل عند المنشن أو الرد عليك</b>\n"
+        text += f"{DISCO} <b>يمكنك استخدام إيموجي بريميوم</b>"
         buttons = [
             [Button.inline(f"إيقاف الرد التلقائي", b"stop_reply")],
             [Button.inline(f"رجوع", b"general_settings")]
@@ -604,9 +613,9 @@ async def callback(event):
 
     elif data == 'set_welcome_msg':
         waiting_for[uid] = 'welcome_msg'
-        text = f"{SIGNAL} <b>أرسل رسالة الترحيب:</b>\n\n"
-        text += f"{BOLT} <b>هذه الرسالة سترسل لأي شخص يرسل لك رسالة خاصة لأول مرة</b>\n"
-        text += f"{SPARK} <b>يمكنك استخدام إيموجي بريميوم</b>"
+        text = f"{MEDAL} <b>أرسل رسالة الترحيب:</b>\n\n"
+        text += f"{COIN} <b>هذه الرسالة سترسل لأي شخص يرسل لك رسالة خاصة لأول مرة</b>\n"
+        text += f"{DISCO} <b>يمكنك استخدام إيموجي بريميوم</b>"
         buttons = [
             [Button.inline(f"إيقاف رسالة الترحيب", b"stop_welcome")],
             [Button.inline(f"رجوع", b"general_settings")]
@@ -619,8 +628,8 @@ async def callback(event):
         user['auto_reply_entities'] = []
         save_db()
         await event.answer("تم إيقاف الرد التلقائي")
-        text = f"{BOLT} <b>تم إيقاف الرد التلقائي بنجاح</b>\n\n"
-        text += f"{SIGNAL} <b>لن يتم الرد على المنشن والريبلاي الآن</b>"
+        text = f"{COIN} <b>تم إيقاف الرد التلقائي بنجاح</b>\n\n"
+        text += f"{MEDAL} <b>لن يتم الرد على المنشن والريبلاي الآن</b>"
         await safe_edit(event, text, buttons=[[Button.inline(f"رجوع", b"general_settings")]])
         return
 
@@ -629,8 +638,8 @@ async def callback(event):
         user['welcome_entities'] = []
         save_db()
         await event.answer("تم إيقاف رسالة الترحيب")
-        text = f"{BOLT} <b>تم إيقاف رسالة الترحيب بنجاح</b>\n\n"
-        text += f"{SIGNAL} <b>لن يتم إرسال رسائل ترحيب للخاص الآن</b>"
+        text = f"{COIN} <b>تم إيقاف رسالة الترحيب بنجاح</b>\n\n"
+        text += f"{MEDAL} <b>لن يتم إرسال رسائل ترحيب للخاص الآن</b>"
         await safe_edit(event, text, buttons=[[Button.inline(f"رجوع", b"general_settings")]])
         return
 
@@ -640,13 +649,13 @@ async def callback(event):
         for acc_id, acc in user['accounts'].items():
             accounts_btns.append([Button.inline(f"{acc['name']}", f"fetch_groups_{acc_id}".encode())])
         accounts_btns.append([Button.inline(f"رجوع", b"back_main")])
-        await safe_edit(event, f"{ROCKET} <b>اختر الحساب لجلب الجروبات:</b>", buttons=accounts_btns)
+        await safe_edit(event, f"{BRIEFCASE} <b>اختر الحساب لجلب الجروبات:</b>", buttons=accounts_btns)
         return
 
     elif data.startswith('fetch_groups_'):
         account_id = data.split('_')[2]
         waiting_for[uid] = f'fetch_groups_{account_id}'
-        await safe_edit(event, f"{ROCKET} <b>جاري جلب الجروبات...</b>\n\n{SIGNAL} قد يستغرق هذا بعض الوقت حسب عدد الجروبات", buttons=[[Button.inline(f"إلغاء", b"back_main")]])
+        await safe_edit(event, f"{BRIEFCASE} <b>جاري جلب الجروبات...</b>\n\n{MEDAL} قد يستغرق هذا بعض الوقت حسب عدد الجروبات", buttons=[[Button.inline(f"إلغاء", b"back_main")]])
         return
 
     elif data == 'manage_groups':
@@ -667,7 +676,7 @@ async def callback(event):
 
         groups_text = '\n'.join([f"{i+1}. {g}" for i, g in enumerate(acc['groups'][:20])])
         if len(acc['groups']) > 20:
-            groups_text += f"\n{SIGNAL}... و {len(acc['groups'])-20} آخرين"
+            groups_text += f"\n{MEDAL}... و {len(acc['groups'])-20} آخرين"
 
         btns = [
             [Button.inline(f"إضافة جروب", f"add_group_{account_id}".encode())],
@@ -681,13 +690,13 @@ async def callback(event):
     elif data.startswith('add_group_'):
         account_id = data.split('_')[2]
         waiting_for[uid] = f'add_group_{account_id}'
-        await safe_edit(event, f"{USER} <b>أرسل يوزر الجروب أو الرابط أو الايدي:</b>\n\n{SIGNAL} مثال: @group_username أو https://t.me/group_username أو -1001234567890\n\n{BOLT} <b>يمكنك إرسال أكثر من جروب في رسالة واحدة (سطر لكل جروب)</b>\n\n{ROCKET} الحد الأقصى: 1000 جروب", buttons=[[Button.inline(f"رجوع", f"manage_groups_{account_id}".encode())]])
+        await safe_edit(event, f"{USER} <b>أرسل يوزر الجروب أو الرابط أو الايدي:</b>\n\n{MEDAL} مثال: @group_username أو https://t.me/group_username أو -1001234567890\n\n{COIN} <b>يمكنك إرسال أكثر من جروب في رسالة واحدة (سطر لكل جروب)</b>\n\n{BRIEFCASE} الحد الأقصى: 1000 جروب", buttons=[[Button.inline(f"رجوع", f"manage_groups_{account_id}".encode())]])
         return
 
     elif data.startswith('del_group_'):
         account_id = data.split('_')[2]
         waiting_for[uid] = f'del_group_{account_id}'
-        await safe_edit(event, f"{BOLT} <b>أرسل يوزر الجروب أو الرابط أو الايدي للحذف:</b>\n\n{SIGNAL} مثال: @group_username أو https://t.me/group_username أو -1001234567890\n\n{BOLT} <b>يمكنك إرسال أكثر من جروب في رسالة واحدة (سطر لكل جروب)</b>", buttons=[[Button.inline(f"رجوع", f"manage_groups_{account_id}".encode())]])
+        await safe_edit(event, f"{COIN} <b>أرسل يوزر الجروب أو الرابط أو الايدي للحذف:</b>\n\n{MEDAL} مثال: @group_username أو https://t.me/group_username أو -1001234567890\n\n{COIN} <b>يمكنك إرسال أكثر من جروب في رسالة واحدة (سطر لكل جروب)</b>", buttons=[[Button.inline(f"رجوع", f"manage_groups_{account_id}".encode())]])
         return
 
     elif data.startswith('clear_groups_'):
@@ -707,7 +716,7 @@ async def callback(event):
 
     elif data == 'pub_interval':
         waiting_for[uid] = 'pub_interval'
-        await safe_edit(event, f"{ROCKET} <b>أرسل الوقت بين كل دورة نشر (بالدقائق):</b>\n\n{SIGNAL} مثال: 5 أو 5-10\n{BOLT} 5 = ثابت كل 5 دقائق\n{BOLT} 5-10 = عشوائي بين 5 و 10 دقائق\n\n{SUN} الحد الأدنى: 1 دقيقة", buttons=[[Button.inline(f"رجوع", b"back_main")]])
+        await safe_edit(event, f"{BRIEFCASE} <b>أرسل الوقت بين كل دورة نشر (بالدقائق):</b>\n\n{MEDAL} مثال: 5 أو 5-10\n{COIN} 5 = ثابت كل 5 دقائق\n{COIN} 5-10 = عشوائي بين 5 و 10 دقائق\n\n{SHOPPING} الحد الأدنى: 1 دقيقة", buttons=[[Button.inline(f"رجوع", b"back_main")]])
         return
 
     elif data == 'flood_level':
@@ -733,7 +742,7 @@ async def callback(event):
             status = "يعمل" if acc['active'] else "متوقف"
             accounts_btns.append([Button.inline(f"{acc['name']} ({status})", f"toggle_pub_{acc_id}".encode())])
         accounts_btns.append([Button.inline(f"رجوع", b"back_main")])
-        await safe_edit(event, f"{BOLT} <b>اختر الحساب لتشغيل/إيقاف النشر:</b>", buttons=accounts_btns)
+        await safe_edit(event, f"{COIN} <b>اختر الحساب لتشغيل/إيقاف النشر:</b>", buttons=accounts_btns)
         return
 
     elif data.startswith('toggle_pub_'):
@@ -761,7 +770,7 @@ async def callback(event):
                     asyncio.create_task(start_auto_reply(uid, account_id))
 
                 await event.answer("تم تشغيل النشر", alert=True)
-                await log_error(uid, f'{SPARK} بدأ النشر - عدد الجروبات: {len(acc["groups"])}', account_id)
+                await log_error(uid, f'{DISCO} بدأ النشر - عدد الجروبات: {len(acc["groups"])}', account_id)
             else:
                 key = f"{uid}_{account_id}"
                 if key in running_tasks:
@@ -772,7 +781,7 @@ async def callback(event):
                         pass
                     del running_tasks[key]
                 await event.answer("تم إيقاف النشر", alert=True)
-                await log_error(uid, f'{BOLT} تم إيقاف النشر يدوياً', account_id)
+                await log_error(uid, f'{COIN} تم إيقاف النشر يدوياً', account_id)
 
             text, btns = account_menu(uid, account_id)
             await safe_edit(event, text, buttons=btns)
@@ -784,7 +793,7 @@ async def callback(event):
         for acc_id, acc in user['accounts'].items():
             accounts_btns.append([Button.inline(f"{acc['name']}", f"analyze_account_{acc_id}".encode())])
         accounts_btns.append([Button.inline(f"رجوع", b"back_main")])
-        await safe_edit(event, f"{PLANET} <b>اختر الحساب للتحليل:</b>", buttons=accounts_btns)
+        await safe_edit(event, f"{ID_CARD} <b>اختر الحساب للتحليل:</b>", buttons=accounts_btns)
         return
 
     elif data.startswith('analyze_account_'):
@@ -808,25 +817,25 @@ async def callback(event):
         flood_protection = FLOOD_PROTECTION_LEVELS[user['flood_protection']]['name']
         stealth_mode = STEALTH_MODES[user['stealth_mode']]['name']
 
-        text = f"{PLANET} <b>تحليل وضع النشر</b>\n\n"
+        text = f"{ID_CARD} <b>تحليل وضع النشر</b>\n\n"
         text += f"{USER} <b>الحساب:</b> {acc['name']}\n"
-        text += f"{ROCKET} <b>الرقم:</b> <code>{acc['phone']}</code>\n"
-        text += f"{SIGNAL} <b>الحالة:</b> {status}\n"
-        text += f"{DICE} <b>الجروبات:</b> {len(acc['groups'])}\n"
-        text += f"{SPARK} <b>الرسائل المرسلة:</b> {acc['sent_count']}\n"
-        text += f"{BOLT} <b>النشر كل:</b> {user['publish_interval']} دقيقة\n"
-        text += f"{GHOST} <b>وضع التخفي:</b> {stealth_mode}\n"
-        text += f"{SUN} <b>حماية الفلود:</b> {flood_protection}\n"
-        text += f"{CAT} <b>المردود عليهم:</b> {len(acc['replied_to'])} شخص\n"
+        text += f"{COIN} <b>الرقم:</b> <code>{acc['phone']}</code>\n"
+        text += f"{MEDAL} <b>الحالة:</b> {status}\n"
+        text += f"{BRIEFCASE} <b>الجروبات:</b> {len(acc['groups'])}\n"
+        text += f"{DISCO} <b>الرسائل المرسلة:</b> {acc['sent_count']}\n"
+        text += f"{BRIEFCASE2} <b>النشر كل:</b> {user['publish_interval']} دقيقة\n"
+        text += f"{PARACHUTE} <b>وضع التخفي:</b> {stealth_mode}\n"
+        text += f"{SHOPPING} <b>حماية الفلود:</b> {flood_protection}\n"
+        text += f"{CAT_FACE} <b>المردود عليهم:</b> {len(acc['replied_to'])} شخص\n"
         text += f"{PC} <b>عدد مرات الفلود:</b> {acc.get('flood_count', 0)}\n"
         text += f"{LOCK} <b>آخر خطأ:</b> {acc.get('last_error') or 'لا يوجد'}\n"
-        text += f"{SIGNAL} <b>النشر:</b> {'يعمل' if acc['active'] else 'متوقف'}\n\n"
+        text += f"{MEDAL} <b>النشر:</b> {'يعمل' if acc['active'] else 'متوقف'}\n\n"
 
         if acc.get('last_error'):
-            text += f"{BOLT} <b>تحذير:</b> {acc['last_error']}\n"
-            text += f"{SIGNAL} فعل وضع الحماية القصوى إذا تكرر الخطأ"
+            text += f"{COIN} <b>تحذير:</b> {acc['last_error']}\n"
+            text += f"{MEDAL2} فعل وضع الحماية القصوى إذا تكرر الخطأ"
         else:
-            text += f"{SPARK} <b>الحساب آمن</b> - يمكنك متابعة النشر"
+            text += f"{DISCO} <b>الحساب آمن</b> - يمكنك متابعة النشر"
 
         await safe_edit(event, text, buttons=[[Button.inline(f"رجوع", f"account_menu_{account_id}".encode())]])
         return
@@ -852,7 +861,7 @@ async def callback(event):
         for acc_id, acc in user['accounts'].items():
             accounts_btns.append([Button.inline(f"{acc['name']}", f"delete_account_{acc_id}".encode())])
         accounts_btns.append([Button.inline(f"رجوع", b"back_main")])
-        await safe_edit(event, f"{BOLT} <b>اختر الحساب للحذف:</b>", buttons=accounts_btns)
+        await safe_edit(event, f"{COIN} <b>اختر الحساب للحذف:</b>", buttons=accounts_btns)
         return
 
     elif data.startswith('delete_account_'):
@@ -894,7 +903,7 @@ async def callback(event):
 
     elif data == 'set_storage_group':
         waiting_for[uid] = 'set_storage_group'
-        await safe_edit(event, f"{FOLDER} <b>أرسل يوزر أو رابط أو ايدي جروب التخزين:</b>\n\n{SIGNAL} مثال: @storage_group أو https://t.me/storage_group أو -1001234567890", buttons=[[Button.inline(f"رجوع", b"storage_settings")]])
+        await safe_edit(event, f"{FOLDER} <b>أرسل يوزر أو رابط أو ايدي جروب التخزين:</b>\n\n{MEDAL} مثال: @storage_group أو https://t.me/storage_group أو -1001234567890", buttons=[[Button.inline(f"رجوع", b"storage_settings")]])
         return
 
     elif data == 'toggle_smart_reply':
@@ -910,7 +919,7 @@ async def callback(event):
         waiting_for[uid] = 'manage_smart_replies'
         replies = user['smart_replies']
         if not replies:
-            text = f"{USER} <b>لا توجد ردود ذكية مضافة</b>\n\n{SIGNAL} أضف ردود ذكية للتعرف على الرسائل والرد تلقائياً"
+            text = f"{USER} <b>لا توجد ردود ذكية مضافة</b>\n\n{MEDAL} أضف ردود ذكية للتعرف على الرسائل والرد تلقائياً"
         else:
             text = f"{USER} <b>الردود الذكية ({len(replies)}):</b>\n\n"
             for i, (keyword, reply) in enumerate(replies.items(), 1):
@@ -926,7 +935,7 @@ async def callback(event):
 
     elif data == 'add_smart_reply':
         waiting_for[uid] = 'add_smart_reply_keyword'
-        await safe_edit(event, f"{USER} <b>أرسل الكلمة المفتاحية للرد الذكي:</b>\n\n{SIGNAL} مثال: مرحباً أو كيف حالك", buttons=[[Button.inline(f"رجوع", b"manage_smart_replies")]])
+        await safe_edit(event, f"{USER} <b>أرسل الكلمة المفتاحية للرد الذكي:</b>\n\n{MEDAL} مثال: مرحباً أو كيف حالك", buttons=[[Button.inline(f"رجوع", b"manage_smart_replies")]])
         return
 
     elif data == 'del_smart_reply':
@@ -940,7 +949,7 @@ async def callback(event):
         for keyword in replies.keys():
             btns.append([Button.inline(f"{keyword}", f"del_smart_reply_{keyword}".encode())])
         btns.append([Button.inline(f"رجوع", b"manage_smart_replies")])
-        await safe_edit(event, f"{BOLT} <b>اختر الرد الذكي للحذف:</b>", buttons=btns)
+        await safe_edit(event, f"{COIN} <b>اختر الرد الذكي للحذف:</b>", buttons=btns)
         return
 
     elif data.startswith('del_smart_reply_'):
@@ -966,13 +975,13 @@ async def callback(event):
         for user_id, user_data in db['users'].items():
             sub_status = "مفعل" if is_subscribed(int(user_id)) else "غير مفعل"
             accounts_count = len(user_data.get('accounts', {}))
-            users_list.append(f"{SIGNAL} <code>{user_id}</code> - {sub_status} - حسابات: {accounts_count}")
+            users_list.append(f"{MEDAL} <code>{user_id}</code> - {sub_status} - حسابات: {accounts_count}")
         text = "\n".join(users_list[:50]) or "لا يوجد مستخدمين"
         btns = [
             [Button.inline(f"المزيد", b"more_users")],
             [Button.inline(f"رجوع", b"admin")]
         ]
-        await safe_edit(event, f"{SUN} <b>المستخدمين ({len(db['users'])}):</b>\n\n{text}", buttons=btns)
+        await safe_edit(event, f"{COIN} <b>المستخدمين ({len(db['users'])}):</b>\n\n{text}", buttons=btns)
         return
 
     elif data == 'more_users':
@@ -982,12 +991,12 @@ async def callback(event):
         for user_id, user_data in list(db['users'].items())[50:100]:
             sub_status = "مفعل" if is_subscribed(int(user_id)) else "غير مفعل"
             accounts_count = len(user_data.get('accounts', {}))
-            users_list.append(f"{SIGNAL} <code>{user_id}</code> - {sub_status} - حسابات: {accounts_count}")
+            users_list.append(f"{MEDAL} <code>{user_id}</code> - {sub_status} - حسابات: {accounts_count}")
         text = "\n".join(users_list) or "لا يوجد المزيد"
         btns = [
             [Button.inline(f"رجوع", b"users")]
         ]
-        await safe_edit(event, f"{SUN} <b>المستخدمين (51-100):</b>\n\n{text}", buttons=btns)
+        await safe_edit(event, f"{COIN} <b>المستخدمين (51-100):</b>\n\n{text}", buttons=btns)
         return
 
     elif data == 'admin_stats':
@@ -998,12 +1007,12 @@ async def callback(event):
         total_accounts = sum(len(u.get('accounts', {})) for u in db['users'].values())
         total_sent = db['stats']['total_sent']
 
-        text = f"{DICE} <b>إحصائيات البوت</b>\n\n"
-        text += f"{SUN} <b>إجمالي المستخدمين:</b> {total_users}\n"
-        text += f"{SPARK} <b>الاشتراكات الفعالة:</b> {active_subs}\n"
-        text += f"{ROCKET} <b>إجمالي الحسابات:</b> {total_accounts}\n"
+        text = f"{BRIEFCASE} <b>إحصائيات البوت</b>\n\n"
+        text += f"{COIN} <b>إجمالي المستخدمين:</b> {total_users}\n"
+        text += f"{DISCO} <b>الاشتراكات الفعالة:</b> {active_subs}\n"
+        text += f"{MEDAL} <b>إجمالي الحسابات:</b> {total_accounts}\n"
         text += f"{USER} <b>إجمالي الرسائل المرسلة:</b> {total_sent}\n"
-        text += f"{BOLT} <b>إجمالي الجروبات:</b> {sum(len(u.get('accounts', {}).get(a, {}).get('groups', [])) for u in db['users'].values() for a in u.get('accounts', {}))}"
+        text += f"{BRIEFCASE2} <b>إجمالي الجروبات:</b> {sum(len(u.get('accounts', {}).get(a, {}).get('groups', [])) for u in db['users'].values() for a in u.get('accounts', {}))}"
 
         await safe_edit(event, text, buttons=[[Button.inline(f"رجوع", b"admin")]])
         return
@@ -1020,7 +1029,7 @@ async def callback(event):
             return
         try:
             with open(BACKUP_FILE, 'rb') as f:
-                await event.respond(f"{PLANET} <b>النسخة الاحتياطية:</b>", file=f)
+                await event.respond(f"{ID_CARD} <b>النسخة الاحتياطية:</b>", file=f)
         except:
             await event.answer("لا توجد نسخة احتياطية", alert=True)
         return
@@ -1029,7 +1038,7 @@ async def callback(event):
         if uid != ADMIN_ID:
             return
         waiting_for[uid] = 'broadcast'
-        await safe_edit(event, f"{BOLT} <b>أرسل رسالة الإشعار العام:</b>", buttons=[[Button.inline(f"رجوع", b"admin")]])
+        await safe_edit(event, f"{COIN} <b>أرسل رسالة الإشعار العام:</b>", buttons=[[Button.inline(f"رجوع", b"admin")]])
         return
 
     elif data == 'toggle_notifications':
@@ -1069,7 +1078,7 @@ async def handle_messages(event):
             # Check if account already exists
             for acc_id, acc in user['accounts'].items():
                 if acc['phone'] == phone:
-                    await event.reply(f"{BOLT} <b>هذا الحساب مضاف بالفعل</b>", parse_mode='html')
+                    await event.reply(f"{COIN} <b>هذا الحساب مضاف بالفعل</b>", parse_mode='html')
                     del waiting_for[uid]
                     return
 
@@ -1083,18 +1092,18 @@ async def handle_messages(event):
             save_db()
 
             del waiting_for[uid]
-            await event.reply(f"{SPARK} <b>تم إضافة الحساب بنجاح</b>\n\n{USER} <b>الرقم:</b> <code>{phone}</code>\n{ROCKET} <b>الاسم:</b> حساب {phone[-4:]}", parse_mode='html')
+            await event.reply(f"{DISCO} <b>تم إضافة الحساب بنجاح</b>\n\n{USER} <b>الرقم:</b> <code>{phone}</code>\n{COIN} <b>الاسم:</b> حساب {phone[-4:]}", parse_mode='html')
 
             if db.get('login_notifications', True):
                 try:
-                    await bot.send_message(ADMIN_ID, f"{SIGNAL} <b>حساب جديد مضاف</b>\n\n{USER} المستخدم: <code>{uid}</code>\n{ROCKET} الرقم: <code>{phone}</code>\n{DICE} الوقت: {datetime.now().strftime('%Y-%m-%d %H:%M')}", parse_mode='html')
+                    await bot.send_message(ADMIN_ID, f"{MEDAL} <b>حساب جديد مضاف</b>\n\n{USER} المستخدم: <code>{uid}</code>\n{COIN} الرقم: <code>{phone}</code>\n{BRIEFCASE} الوقت: {datetime.now().strftime('%Y-%m-%d %H:%M')}", parse_mode='html')
                 except:
                     pass
 
             text, btns = main_menu(uid)
             await event.respond(text, buttons=btns, parse_mode='html')
         except Exception as e:
-            await event.reply(f"{BOLT} <b>خطأ في إضافة الحساب:</b> {str(e)}\n\n{SIGNAL} تأكد من صحة الجلسة وحاول مرة أخرى", parse_mode='html')
+            await event.reply(f"{COIN} <b>خطأ في إضافة الحساب:</b> {str(e)}\n\n{MEDAL} تأكد من صحة الجلسة وحاول مرة أخرى", parse_mode='html')
             del waiting_for[uid]
 
     elif action.startswith('fetch_groups_'):
@@ -1104,11 +1113,11 @@ async def handle_messages(event):
             del waiting_for[uid]
             return
 
-        msg = await event.reply(f"{ROCKET} <b>جاري جلب الجروبات...</b>\n\n{SIGNAL} قد يستغرق هذا بعض الوقت حسب عدد الجروبات", parse_mode='html')
+        msg = await event.reply(f"{BRIEFCASE} <b>جاري جلب الجروبات...</b>\n\n{MEDAL} قد يستغرق هذا بعض الوقت حسب عدد الجروبات", parse_mode='html')
 
         client = await get_user_client(uid, account_id)
         if not client:
-            await msg.edit(f"{BOLT} <b>الحساب غير متصل</b>\n\n{SIGNAL} تأكد من صحة الجلسة وحاول مرة أخرى", buttons=[[Button.inline(f"رجوع", b"back_main")]], parse_mode='html')
+            await msg.edit(f"{COIN} <b>الحساب غير متصل</b>\n\n{MEDAL} تأكد من صحة الجلسة وحاول مرة أخرى", buttons=[[Button.inline(f"رجوع", b"back_main")]], parse_mode='html')
             del waiting_for[uid]
             return
 
@@ -1125,7 +1134,7 @@ async def handle_messages(event):
                     if len(groups) >= 1000:
                         break
         except Exception as e:
-            await msg.edit(f"{BOLT} <b>خطأ في جلب الجروبات:</b> {str(e)}", buttons=[[Button.inline(f"رجوع", b"back_main")]], parse_mode='html')
+            await msg.edit(f"{COIN} <b>خطأ في جلب الجروبات:</b> {str(e)}", buttons=[[Button.inline(f"رجوع", b"back_main")]], parse_mode='html')
             del waiting_for[uid]
             return
 
@@ -1142,9 +1151,9 @@ async def handle_messages(event):
 
         groups_text = '\n'.join(groups[:20])
         if len(groups) > 20:
-            groups_text += f"\n{SIGNAL}... و {len(groups)-20} آخرين"
+            groups_text += f"\n{MEDAL}... و {len(groups)-20} آخرين"
 
-        await msg.edit(f"{SPARK} <b>تم جلب {len(groups)} جروب</b>\n\n{groups_text}", buttons=[[Button.inline(f"رجوع", f"account_menu_{account_id}".encode())]], parse_mode='html')
+        await msg.edit(f"{DISCO} <b>تم جلب {len(groups)} جروب</b>\n\n{groups_text}", buttons=[[Button.inline(f"رجوع", f"account_menu_{account_id}".encode())]], parse_mode='html')
 
     elif action.startswith('add_group_'):
         account_id = action.split('_')[2]
@@ -1155,7 +1164,7 @@ async def handle_messages(event):
 
         client = await get_user_client(uid, account_id)
         if not client:
-            await event.reply(f"{BOLT} <b>الحساب غير متصل</b>\n\n{SIGNAL} تأكد من صحة الجلسة وحاول مرة أخرى", parse_mode='html')
+            await event.reply(f"{COIN} <b>الحساب غير متصل</b>\n\n{MEDAL} تأكد من صحة الجلسة وحاول مرة أخرى", parse_mode='html')
             del waiting_for[uid]
             return
 
@@ -1224,14 +1233,14 @@ async def handle_messages(event):
         save_db()
         del waiting_for[uid]
 
-        result_text = f"{SPARK} <b>تمت إضافة الجروبات:</b>\n\n"
-        result_text += f"{ROCKET} <b>المضافة:</b> {added_count}\n"
-        result_text += f"{BOLT} <b>الفاشلة:</b> {failed_count}\n\n"
+        result_text = f"{DISCO} <b>تمت إضافة الجروبات:</b>\n\n"
+        result_text += f"{BRIEFCASE} <b>المضافة:</b> {added_count}\n"
+        result_text += f"{COIN} <b>الفاشلة:</b> {failed_count}\n\n"
 
         if failed_groups:
-            result_text += f"{SIGNAL} <b>الأخطاء:</b>\n" + '\n'.join(failed_groups[:5])
+            result_text += f"{MEDAL} <b>الأخطاء:</b>\n" + '\n'.join(failed_groups[:5])
             if len(failed_groups) > 5:
-                result_text += f"\n{SIGNAL}... و {len(failed_groups)-5} آخرين"
+                result_text += f"\n{MEDAL}... و {len(failed_groups)-5} آخرين"
 
         await event.reply(result_text, buttons=[[Button.inline(f"رجوع", f"manage_groups_{account_id}".encode())]], parse_mode='html')
 
@@ -1277,14 +1286,14 @@ async def handle_messages(event):
         save_db()
         del waiting_for[uid]
 
-        result_text = f"{BOLT} <b>تم حذف الجروبات:</b>\n\n"
-        result_text += f"{ROCKET} <b>المحذوفة:</b> {removed_count}\n"
-        result_text += f"{SIGNAL} <b>الفاشلة:</b> {failed_count}\n\n"
+        result_text = f"{COIN} <b>تم حذف الجروبات:</b>\n\n"
+        result_text += f"{BRIEFCASE} <b>المحذوفة:</b> {removed_count}\n"
+        result_text += f"{MEDAL} <b>الفاشلة:</b> {failed_count}\n\n"
 
         if failed_groups:
-            result_text += f"{SUN} <b>الأخطاء:</b>\n" + '\n'.join(failed_groups[:5])
+            result_text += f"{SHOPPING} <b>الأخطاء:</b>\n" + '\n'.join(failed_groups[:5])
             if len(failed_groups) > 5:
-                result_text += f"\n{SUN}... و {len(failed_groups)-5} آخرين"
+                result_text += f"\n{SHOPPING}... و {len(failed_groups)-5} آخرين"
 
         await event.reply(result_text, buttons=[[Button.inline(f"رجوع", f"manage_groups_{account_id}".encode())]], parse_mode='html')
 
@@ -1292,10 +1301,10 @@ async def handle_messages(event):
         entities = extract_entities_from_message(event.message)
         if event.sticker:
             user['messages'][0] = {'text': '', 'entities': [], 'file_id': event.sticker.id, 'type': 'sticker'}
-            await event.reply(f'{SPARK} <b>تم حفظ الملصق كرسالة 1</b>', parse_mode='html')
+            await event.reply(f'{DISCO} <b>تم حفظ الملصق كرسالة 1</b>', parse_mode='html')
         else:
             user['messages'][0] = {'text': text, 'entities': entities, 'file_id': None, 'type': 'text'}
-            await event.reply(f'{SPARK} <b>تم حفظ الرسالة 1</b>', parse_mode='html')
+            await event.reply(f'{DISCO} <b>تم حفظ الرسالة 1</b>', parse_mode='html')
         save_db()
         del waiting_for[uid]
         text, btns = main_menu(uid)
@@ -1305,10 +1314,10 @@ async def handle_messages(event):
         entities = extract_entities_from_message(event.message)
         if event.sticker:
             user['messages'][1] = {'text': '', 'entities': [], 'file_id': event.sticker.id, 'type': 'sticker'}
-            await event.reply(f'{SPARK} <b>تم حفظ الملصق كرسالة 2</b>', parse_mode='html')
+            await event.reply(f'{DISCO} <b>تم حفظ الملصق كرسالة 2</b>', parse_mode='html')
         else:
             user['messages'][1] = {'text': text, 'entities': entities, 'file_id': None, 'type': 'text'}
-            await event.reply(f'{SPARK} <b>تم حفظ الرسالة 2</b>', parse_mode='html')
+            await event.reply(f'{DISCO} <b>تم حفظ الرسالة 2</b>', parse_mode='html')
         save_db()
         del waiting_for[uid]
         text, btns = main_menu(uid)
@@ -1318,10 +1327,10 @@ async def handle_messages(event):
         entities = extract_entities_from_message(event.message)
         if event.sticker:
             user['messages'][2] = {'text': '', 'entities': [], 'file_id': event.sticker.id, 'type': 'sticker'}
-            await event.reply(f'{SPARK} <b>تم حفظ الملصق كرسالة 3</b>', parse_mode='html')
+            await event.reply(f'{DISCO} <b>تم حفظ الملصق كرسالة 3</b>', parse_mode='html')
         else:
             user['messages'][2] = {'text': text, 'entities': entities, 'file_id': None, 'type': 'text'}
-            await event.reply(f'{SPARK} <b>تم حفظ الرسالة 3</b>', parse_mode='html')
+            await event.reply(f'{DISCO} <b>تم حفظ الرسالة 3</b>', parse_mode='html')
         save_db()
         del waiting_for[uid]
         text, btns = main_menu(uid)
@@ -1331,10 +1340,10 @@ async def handle_messages(event):
         entities = extract_entities_from_message(event.message)
         if event.sticker:
             user['messages'][3] = {'text': '', 'entities': [], 'file_id': event.sticker.id, 'type': 'sticker'}
-            await event.reply(f'{SPARK} <b>تم حفظ الملصق كرسالة 4</b>', parse_mode='html')
+            await event.reply(f'{DISCO} <b>تم حفظ الملصق كرسالة 4</b>', parse_mode='html')
         else:
             user['messages'][3] = {'text': text, 'entities': entities, 'file_id': None, 'type': 'text'}
-            await event.reply(f'{SPARK} <b>تم حفظ الرسالة 4</b>', parse_mode='html')
+            await event.reply(f'{DISCO} <b>تم حفظ الرسالة 4</b>', parse_mode='html')
         save_db()
         del waiting_for[uid]
         text, btns = main_menu(uid)
@@ -1342,13 +1351,13 @@ async def handle_messages(event):
 
     elif action == 'pub_interval':
         if not re.match(r'^(\d+|\d+-\d+)$', text):
-            await event.reply(f"{BOLT} <b>صيغة غير صحيحة</b>\n\n{SIGNAL} مثال: 5 أو 5-10", parse_mode='html')
+            await event.reply(f"{COIN} <b>صيغة غير صحيحة</b>\n\n{MEDAL} مثال: 5 أو 5-10", parse_mode='html')
             return
 
         user['publish_interval'] = text
         save_db()
         del waiting_for[uid]
-        await event.reply(f"{SPARK} <b>تم تعيين وقت النشر:</b> كل {text} دقيقة", parse_mode='html')
+        await event.reply(f"{DISCO} <b>تم تعيين وقت النشر:</b> كل {text} دقيقة", parse_mode='html')
         text, btns = main_menu(uid)
         await event.respond(text, buttons=btns, parse_mode='html')
 
@@ -1361,11 +1370,11 @@ async def handle_messages(event):
                 acc['name'] = new_name
                 save_db()
                 del waiting_for[uid]
-                await event.reply(f"{SPARK} <b>تم تغيير اسم الحساب إلى:</b> {new_name}", parse_mode='html')
+                await event.reply(f"{DISCO} <b>تم تغيير اسم الحساب إلى:</b> {new_name}", parse_mode='html')
                 text, btns = account_menu(uid, account_id)
                 await safe_edit(event, text, buttons=btns)
         else:
-            await event.reply(f"{BOLT} <b>الاسم لا يمكن أن يكون فارغاً</b>", parse_mode='html')
+            await event.reply(f"{COIN} <b>الاسم لا يمكن أن يكون فارغاً</b>", parse_mode='html')
 
     elif action == 'reply_msg':
         entities = extract_entities_from_message(event.message)
@@ -1373,7 +1382,7 @@ async def handle_messages(event):
         user['auto_reply_entities'] = entities
         save_db()
         del waiting_for[uid]
-        await event.reply(f"{SPARK} <b>تم حفظ رسالة الرد التلقائي</b>", parse_mode='html')
+        await event.reply(f"{DISCO} <b>تم حفظ رسالة الرد التلقائي</b>", parse_mode='html')
         text, btns = general_settings_menu(uid)
         await safe_edit(event, text, buttons=btns)
 
@@ -1383,7 +1392,7 @@ async def handle_messages(event):
         user['welcome_entities'] = entities
         save_db()
         del waiting_for[uid]
-        await event.reply(f"{SPARK} <b>تم حفظ رسالة الترحيب</b>", parse_mode='html')
+        await event.reply(f"{DISCO} <b>تم حفظ رسالة الترحيب</b>", parse_mode='html')
         text, btns = general_settings_menu(uid)
         await safe_edit(event, text, buttons=btns)
 
@@ -1412,15 +1421,15 @@ async def handle_messages(event):
             user['storage_group'] = str(group_id)
             save_db()
             del waiting_for[uid]
-            await event.reply(f"{SPARK} <b>تم تعيين جروب التخزين:</b> {text}", parse_mode='html')
+            await event.reply(f"{DISCO} <b>تم تعيين جروب التخزين:</b> {text}", parse_mode='html')
             text, btns = storage_settings_menu(uid)
             await safe_edit(event, text, buttons=btns)
         except Exception as e:
-            await event.reply(f"{BOLT} <b>خطأ:</b> {str(e)}\n\n{SIGNAL} تأكد من صحة الرابط أو الايدي وحاول مرة أخرى", parse_mode='html')
+            await event.reply(f"{COIN} <b>خطأ:</b> {str(e)}\n\n{MEDAL} تأكد من صحة الرابط أو الايدي وحاول مرة أخرى", parse_mode='html')
 
     elif action == 'add_smart_reply_keyword':
         if not text:
-            await event.reply(f"{BOLT} <b>الكلمة المفتاحية لا يمكن أن تكون فارغة</b>", parse_mode='html')
+            await event.reply(f"{COIN} <b>الكلمة المفتاحية لا يمكن أن تكون فارغة</b>", parse_mode='html')
             return
 
         waiting_for[uid] = f'add_smart_reply_{text}'
@@ -1429,13 +1438,13 @@ async def handle_messages(event):
     elif action.startswith('add_smart_reply_'):
         keyword = action.split('_', 3)[3]
         if not text:
-            await event.reply(f"{BOLT} <b>الرد لا يمكن أن يكون فارغاً</b>", parse_mode='html')
+            await event.reply(f"{COIN} <b>الرد لا يمكن أن يكون فارغاً</b>", parse_mode='html')
             return
 
         user['smart_replies'][keyword] = text
         save_db()
         del waiting_for[uid]
-        await event.reply(f"{SPARK} <b>تم إضافة الرد الذكي:</b>\n\n<b>الكلمة:</b> {keyword}\n<b>الرد:</b> {text}", parse_mode='html')
+        await event.reply(f"{DISCO} <b>تم إضافة الرد الذكي:</b>\n\n<b>الكلمة:</b> {keyword}\n<b>الرد:</b> {text}", parse_mode='html')
         text, btns = storage_settings_menu(uid)
         await safe_edit(event, text, buttons=btns)
 
@@ -1447,19 +1456,19 @@ async def handle_messages(event):
         count = 0
         for user_id in db['users'].keys():
             try:
-                await bot.send_message(int(user_id), f"{BOLT} <b>إشعار من الإدارة:</b>\n\n{msg_text}", parse_mode='html')
+                await bot.send_message(int(user_id), f"{COIN} <b>إشعار من الإدارة:</b>\n\n{msg_text}", parse_mode='html')
                 count += 1
             except:
                 pass
 
         del waiting_for[uid]
-        await event.reply(f"{SPARK} <b>تم إرسال الإشعار العام</b>\n\n{ROCKET} <b>وصلت إلى:</b> {count} مستخدم", parse_mode='html')
+        await event.reply(f"{DISCO} <b>تم إرسال الإشعار العام</b>\n\n{MEDAL} <b>وصلت إلى:</b> {count} مستخدم", parse_mode='html')
 
 async def publish_loop(uid, account_id):
     user = get_user_data(uid)
     acc = get_account(uid, account_id)
     if not acc:
-        await log_error(uid, f'{BOLT} الحساب غير موجود', account_id)
+        await log_error(uid, f'{COIN} الحساب غير موجود', account_id)
         return
 
     key = f"{uid}_{account_id}"
@@ -1469,7 +1478,7 @@ async def publish_loop(uid, account_id):
         acc['active'] = False
         acc['last_error'] = 'فشل الاتصال بالحساب'
         save_db()
-        await log_error(uid, f'{BOLT} فشل الاتصال بالحساب', account_id)
+        await log_error(uid, f'{COIN} فشل الاتصال بالحساب', account_id)
         return
 
     try:
@@ -1477,10 +1486,10 @@ async def publish_loop(uid, account_id):
             acc['active'] = False
             acc['last_error'] = 'انتهت صلاحية الجلسة'
             save_db()
-            await log_error(uid, f'{BOLT} انتهت صلاحية الجلسة - احذف الحساب وأضفه مرة أخرى', account_id)
+            await log_error(uid, f'{COIN} انتهت صلاحية الجلسة - احذف الحساب وأضفه مرة أخرى', account_id)
             return
 
-        await log_error(uid, f'{SPARK} بدأ النشر - عدد الجروبات: {len(acc["groups"])}', account_id)
+        await log_error(uid, f'{DISCO} بدأ النشر - عدد الجروبات: {len(acc["groups"])}', account_id)
         stealth = STEALTH_MODES[user['stealth_mode']]
         flood_protection = FLOOD_PROTECTION_LEVELS[user['flood_protection']]
         msg_index = 0
@@ -1488,14 +1497,14 @@ async def publish_loop(uid, account_id):
         while acc['active'] and is_subscribed(uid):
             msgs = user['messages']
             if not acc['groups']:
-                await log_error(uid, f'{BOLT} قائمة الجروبات فارغة - قم بجلب الجروبات', account_id)
+                await log_error(uid, f'{COIN} قائمة الجروبات فارغة - قم بجلب الجروبات', account_id)
                 acc['active'] = False
                 save_db()
                 return
 
             # Check if at least one message is set
             if not any(msg['text'] or msg['file_id'] for msg in msgs):
-                await log_error(uid, f'{BOLT} لا توجد رسائل مضبوطة - قم بتعيين الرسائل', account_id)
+                await log_error(uid, f'{COIN} لا توجد رسائل مضبوطة - قم بتعيين الرسائل', account_id)
                 acc['active'] = False
                 save_db()
                 return
@@ -1569,7 +1578,7 @@ async def publish_loop(uid, account_id):
                             else:
                                 await client.send_message(storage_group, f"رسالة مرسلة إلى: {group}\n\n{msg_data['text']}", formatting_entities=entities)
                         except Exception as e:
-                            await log_error(uid, f'{BOLT} خطأ في تخزين الرسالة: {str(e)}', account_id)
+                            await log_error(uid, f'{COIN} خطأ في تخزين الرسالة: {str(e)}', account_id)
 
                     delay = random.randint(*stealth['group_delay'])
                     if user['flood_protection'] >= 1:
@@ -1592,19 +1601,19 @@ async def publish_loop(uid, account_id):
                     acc['last_flood_time'] = datetime.now().isoformat()
                     acc['last_error'] = f'فلود {e.seconds} ثانية'
                     save_db()
-                    await log_error(uid, f'{BOLT} فلود وايت {e.seconds} ثانية - الانتظار {flood_protection["delay"]} دقيقة', account_id)
+                    await log_error(uid, f'{COIN} فلود وايت {e.seconds} ثانية - الانتظار {flood_protection["delay"]} دقيقة', account_id)
                     await asyncio.sleep(e.seconds + (flood_protection['delay'] * 60))
                 except UserDeactivatedBanError:
                     acc['active'] = False
                     acc['last_error'] = 'الحساب محظور من تيليجرام'
                     save_db()
-                    await log_error(uid, f'{BOLT} الحساب محظور من تيليجرام نهائياً', account_id)
+                    await log_error(uid, f'{COIN} الحساب محظور من تيليجرام نهائياً', account_id)
                     return
                 except AuthKeyUnregisteredError:
                     acc['active'] = False
                     acc['last_error'] = 'انتهت صلاحية الجلسة'
                     save_db()
-                    await log_error(uid, f'{BOLT} انتهت صلاحية الجلسة - احذف الحساب وأضفه مرة أخرى', account_id)
+                    await log_error(uid, f'{COIN} انتهت صلاحية الجلسة - احذف الحساب وأضفه مرة أخرى', account_id)
                     return
                 except Exception as e:
                     error_details.append(f"{group}: {str(e)[:40]}")
@@ -1617,7 +1626,7 @@ async def publish_loop(uid, account_id):
                 save_db()
 
             if sent_count == 0 and len(acc['groups']) > 0:
-                error_msg = f"{BOLT} فشل النشر في كل الجروبات:\n" + "\n".join(error_details[:5])
+                error_msg = f"{COIN} فشل النشر في كل الجروبات:\n" + "\n".join(error_details[:5])
                 await log_error(uid, error_msg, account_id)
                 acc['active'] = False
                 acc['last_error'] = 'فشل في كل الجروبات'
@@ -1629,12 +1638,12 @@ async def publish_loop(uid, account_id):
             await asyncio.sleep(interval * 60)
 
     except asyncio.CancelledError:
-        await log_error(uid, f'{BOLT} تم إيقاف النشر', account_id)
+        await log_error(uid, f'{COIN} تم إيقاف النشر', account_id)
     except Exception as e:
         acc['active'] = False
         acc['last_error'] = str(e)[:100]
         save_db()
-        await log_error(uid, f'{BOLT} خطأ عام في النشر: {type(e).__name__}: {str(e)[:100]}', account_id)
+        await log_error(uid, f'{COIN} خطأ عام في النشر: {type(e).__name__}: {str(e)[:100]}', account_id)
     finally:
         try:
             await client.disconnect()
@@ -1672,7 +1681,7 @@ async def start_auto_reply(uid, account_id):
                                     storage_group = await client.get_entity(user['storage_group'])
                                     await client.send_message(storage_group, f"تم الرد على منشن من: {event.sender_id}\n\nالرسالة الأصلية: {event.raw_text}")
                                 except Exception as e:
-                                    await log_error(uid, f'{BOLT} خطأ في تخزين التفاعل: {str(e)}', account_id)
+                                    await log_error(uid, f'{COIN} خطأ في تخزين التفاعل: {str(e)}', account_id)
 
                 elif event.is_private and user['welcome_msg'] and user['welcome_enabled']:
                     sender_id = event.sender_id
@@ -1688,7 +1697,7 @@ async def start_auto_reply(uid, account_id):
                                 storage_group = await client.get_entity(user['storage_group'])
                                 await client.send_message(storage_group, f"تم إرسال رسالة ترحيب إلى: {sender_id}")
                             except Exception as e:
-                                await log_error(uid, f'{BOLT} خطأ في تخزين الترحيب: {str(e)}', account_id)
+                                await log_error(uid, f'{COIN} خطأ في تخزين الترحيب: {str(e)}', account_id)
 
                 # Smart replies
                 if event.is_group and user['smart_reply_enabled'] and user['smart_replies']:
@@ -1702,17 +1711,17 @@ async def start_auto_reply(uid, account_id):
                                     storage_group = await client.get_entity(user['storage_group'])
                                     await client.send_message(storage_group, f"تم الرد الذكي على: {event.sender_id}\n\nالكلمة المفتاحية: {keyword}\nالرسالة الأصلية: {event.raw_text}")
                                 except Exception as e:
-                                    await log_error(uid, f'{BOLT} خطأ في تخزين الرد الذكي: {str(e)}', account_id)
+                                    await log_error(uid, f'{COIN} خطأ في تخزين الرد الذكي: {str(e)}', account_id)
                             break
 
             except Exception as e:
-                await log_error(uid, f'{BOLT} خطأ في الرد التلقائي: {str(e)}', account_id)
+                await log_error(uid, f'{COIN} خطأ في الرد التلقائي: {str(e)}', account_id)
 
         while acc['active'] and user['auto_reply'] and is_subscribed(uid):
             await asyncio.sleep(60)
 
     except Exception as e:
-        await log_error(uid, f'{BOLT} خطأ في بدء الرد التلقائي: {str(e)}', account_id)
+        await log_error(uid, f'{COIN} خطأ في بدء الرد التلقائي: {str(e)}', account_id)
 
 async def backup_task():
     while True:
@@ -1720,7 +1729,7 @@ async def backup_task():
         backup_sessions()
         if db.get('login_notifications', True):
             try:
-                await bot.send_message(ADMIN_ID, f"{PLANET} <b>نسخة احتياطية تلقائية</b>\n\n{USER} تم حفظ {len(db['users'])} مستخدم\n{DICE} الوقت: {datetime.now().strftime('%Y-%m-%d %H:%M')}", parse_mode='html')
+                await bot.send_message(ADMIN_ID, f"{ID_CARD} <b>نسخة احتياطية تلقائية</b>\n\n{USER} تم حفظ {len(db['users'])} مستخدم\n{BRIEFCASE} الوقت: {datetime.now().strftime('%Y-%m-%d %H:%M')}", parse_mode='html')
             except:
                 pass
 
