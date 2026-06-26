@@ -435,7 +435,6 @@ async def start(event):
             return
 
     if not is_subscribed(uid):
-if not is_subscribed(uid):
     btns = [
         [Button.inline("تجربة مجانية", b"free_trial")],
         [Button.inline("اشتراك نجوم", b"buy_stars")],
