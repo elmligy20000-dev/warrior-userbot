@@ -443,19 +443,11 @@ async def start(event):
             [Button.url(f"المبرمج", DEVELOPER_LINK)]
         ]
 
-        welcome_text = 
-f"{PLUS} أهلاً بيك في بوت النشر التلقائي المتطور الاحترافي</b>\n\n"
-
-f"{FOLDER}نشر تلقائي في المجموعات آمن جداً</b>\n"
-
-f"{UNLOCK}حماية متقدمة عالية جداً ضد التجميد والفلود</b>\n"
-
-f"{SETTINGS}جرب البوت مجاناً {FREE_TRIAL_DAYS} يوم</b>\n"
-
-f"{ID_CARD}او اختر باقة مدفوعة:</b>\n"
-f"{ID_CARD}نجوم تيليجرام</b>\n"
-
-f"{BRIEFCASE2}اختار وابدأ النشر الاحترافي</b>\n"
+text = f"{SPARK} <b>أهلاً بيك في بوت النشر المتطور الاحترافي</b>\n\n"
+text += f"{SPARK} <b>الاشتراك: {days} يوم متبقي</b>\n"
+text += f"{SPARK} <b>الرسائل المرسله: {sent}</b>\n"
+text += f"{SPARK} <b>النشر: {'يعمل' if acc and acc['active'] else 'متوقف'}</b>\n\n"
+text += f"{SPARK} <b>كل شيئ في واجهة واحدة</b>"
 
         await event.reply(welcome_text, buttons=btns, parse_mode='html')
         return
