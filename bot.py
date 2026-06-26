@@ -41,6 +41,10 @@ from mutagen.mp3 import MP3
 import time
 import logging
 from logging.handlers import RotatingFileHandler
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+import threading
+import sqlite3
+from werkzeug.security import generate_password_hash, check_password_hash
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,36 +63,219 @@ API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
 BOT_TOKEN = "8914045842:AAEz6MNsGTShwob_M3H0ECy8eOkl2nT5gno"
 OWNER_ID = 932862531
 SUDO_USERS = [932862531]
-MONGO_URI = os.environ.get("MONGO_URI", "your_mongo_uri_here")
 TRIAL_DAYS = 3
 SUBSCRIPTION_COST = 200
 REQUIRED_INVITES = 20
 
-# Initialize MongoDB
-from pymongo import MongoClient
-mongo_client = MongoClient(MONGO_URI)
-db = mongo_client["auto_poster_bot"]
-users_collection = db["users"]
-groups_collection = db["groups"]
-channels_collection = db["channels"]
-invites_collection = db["invites"]
-music_collection = db["music"]
-settings_collection = db["settings"]
-repeats_collection = db["repeats"]
-auto_replies_collection = db["auto_replies"]
-scheduled_tasks_collection = db["scheduled_tasks"]
-muted_users_collection = db["muted_users"]
-blocked_media_collection = db["blocked_media"]
-storage_collection = db["storage"]
+# Initialize SQLite database
+def init_db():
+    conn = sqlite3.connect('bot_database.db')
+    c = conn.cursor()
+
+    # Create tables
+    c.execute('''CREATE TABLE IF NOT EXISTS users
+                 (user_id INTEGER PRIMARY KEY,
+                  trial_used BOOLEAN,
+                  trial_end_date TEXT,
+                  is_subscribed BOOLEAN,
+                  subscription_end_date TEXT,
+                  invites INTEGER)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS groups
+                 (group_id INTEGER PRIMARY KEY,
+                  auto_post_enabled BOOLEAN,
+                  messages TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS channels
+                 (channel_id INTEGER PRIMARY KEY,
+                  invite_link TEXT,
+                  force_subscribe BOOLEAN)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS invites
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  inviter_id INTEGER,
+                  invited_id INTEGER,
+                  date TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS repeats
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  chat_id INTEGER,
+                  interval INTEGER,
+                  message TEXT,
+                  active BOOLEAN,
+                  type TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS auto_replies
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  trigger TEXT,
+                  response TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS scheduled_tasks
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  type TEXT,
+                  interval INTEGER,
+                  data TEXT,
+                  active BOOLEAN)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS muted_users
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  chat_id INTEGER,
+                  user_id INTEGER)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS blocked_media
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  chat_id INTEGER,
+                  media_type TEXT,
+                  blocked BOOLEAN)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS settings
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  setting TEXT,
+                  value TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS admin_users
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  user_id INTEGER,
+                  username TEXT,
+                  password_hash TEXT)''')
+
+    conn.commit()
+    conn.close()
+
+init_db()
 
 # Initialize Telethon client
 bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-# Global variables for repeat tasks
-repeat_tasks = {}
-global_repeat_task = None
-global_repeat_interval = 5
-storage_chat = None
+# Web interface
+app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "your_secret_key_here")
+
+def get_db_connection():
+    conn = sqlite3.connect('bot_database.db')
+    conn.row_factory = sqlite3.Row
+    return conn
+
+@app.route('/')
+def index():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM admin_users WHERE user_id = ?', (session['user_id'],)).fetchone()
+    conn.close()
+
+    if not user:
+        return redirect(url_for('login'))
+
+    return render_template('dashboard.html', username=user['username'])
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        conn = get_db_connection()
+        user = conn.execute('SELECT * FROM admin_users WHERE username = ?', (username,)).fetchone()
+        conn.close()
+
+        if user and check_password_hash(user['password_hash'], password):
+            session['user_id'] = user['user_id']
+            return redirect(url_for('index'))
+
+        return render_template('login.html', error="Invalid username or password")
+
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('user_id', None)
+    return redirect(url_for('login'))
+
+@app.route('/users')
+def users():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    conn = get_db_connection()
+    users = conn.execute('SELECT * FROM users').fetchall()
+    conn.close()
+
+    return render_template('users.html', users=users)
+
+@app.route('/groups')
+def groups():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    conn = get_db_connection()
+    groups = conn.execute('SELECT * FROM groups').fetchall()
+    conn.close()
+
+    return render_template('groups.html', groups=groups)
+
+@app.route('/settings')
+def settings():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    conn = get_db_connection()
+    settings = conn.execute('SELECT * FROM settings').fetchall()
+    conn.close()
+
+    return render_template('settings.html', settings=settings)
+
+@app.route('/api/users')
+def api_users():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    conn = get_db_connection()
+    users = conn.execute('SELECT * FROM users').fetchall()
+    conn.close()
+
+    return jsonify([dict(user) for user in users])
+
+@app.route('/api/groups')
+def api_groups():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    conn = get_db_connection()
+    groups = conn.execute('SELECT * FROM groups').fetchall()
+    conn.close()
+
+    return jsonify([dict(group) for group in groups])
+
+@app.route('/api/settings', methods=['GET', 'POST'])
+def api_settings():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    conn = get_db_connection()
+
+    if request.method == 'POST':
+        data = request.get_json()
+        for setting in data:
+            conn.execute('INSERT OR REPLACE INTO settings (setting, value) VALUES (?, ?)',
+                         (setting['key'], setting['value']))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+
+    settings = conn.execute('SELECT * FROM settings').fetchall()
+    conn.close()
+
+    return jsonify([dict(setting) for setting in settings])
+
+def run_web():
+    app.run(host='0.0.0.0', port=5000)
+
+# Start web interface in a separate thread
+web_thread = threading.Thread(target=run_web)
+web_thread.daemon = True
+web_thread.start()
 
 # Helper functions
 async def is_admin(event):
@@ -99,38 +286,47 @@ async def is_admin(event):
         return False
 
 async def check_subscription(user_id):
-    user = users_collection.find_one({"user_id": user_id})
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
+    conn.close()
+
     if not user:
         return False, "لم يتم العثور على المستخدم."
 
-    if user.get("is_subscribed", False):
+    if user['is_subscribed']:
         return True, "لديك اشتراك نشط."
 
-    if user.get("trial_used", False):
-        trial_end = user.get("trial_end_date")
-        if trial_end and datetime.datetime.now(pytz.UTC) < trial_end:
+    if user['trial_used']:
+        trial_end = datetime.datetime.fromisoformat(user['trial_end_date'])
+        if datetime.datetime.now(pytz.UTC) < trial_end:
             return True, f"لديك تجربة مجانية نشطة تنتهي في {trial_end.strftime('%Y-%m-%d %H:%M:%S')}."
 
     return False, "ليس لديك اشتراك نشط أو انتهت فترة تجربتك."
 
 async def force_subscribe_channels(event):
-    channels = channels_collection.find({"force_subscribe": True})
+    conn = get_db_connection()
+    channels = conn.execute('SELECT * FROM channels WHERE force_subscribe = 1').fetchall()
+    conn.close()
+
     for channel in channels:
         try:
-            await event.client(ImportChatInviteRequest(channel["invite_link"]))
+            await event.client(ImportChatInviteRequest(channel['invite_link']))
         except Exception as e:
             logger.error(f"Error joining channel {channel['invite_link']}: {e}")
 
 async def auto_post_to_groups():
     while True:
         try:
-            groups = groups_collection.find({"auto_post_enabled": True})
+            conn = get_db_connection()
+            groups = conn.execute('SELECT * FROM groups WHERE auto_post_enabled = 1').fetchall()
+            conn.close()
+
             for group in groups:
                 try:
-                    messages = group.get("messages", [])
+                    messages = json.loads(group['messages']) if group['messages'] else []
                     if messages:
                         message = random.choice(messages)
-                        await bot.send_message(group["group_id"], message)
+                        await bot.send_message(group['group_id'], message)
                         logger.info(f"Posted to group {group['group_id']}")
                 except Exception as e:
                     logger.error(f"Error posting to group {group['group_id']}: {e}")
@@ -139,46 +335,43 @@ async def auto_post_to_groups():
         await asyncio.sleep(3600)  # Post every hour
 
 async def check_and_apply_trial(user_id):
-    user = users_collection.find_one({"user_id": user_id})
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
+
     if not user:
         trial_end = datetime.datetime.now(pytz.UTC) + datetime.timedelta(days=TRIAL_DAYS)
-        users_collection.insert_one({
-            "user_id": user_id,
-            "trial_used": True,
-            "trial_end_date": trial_end,
-            "is_subscribed": False,
-            "subscription_end_date": None,
-            "invites": 0
-        })
+        conn.execute('INSERT INTO users (user_id, trial_used, trial_end_date, is_subscribed, subscription_end_date, invites) VALUES (?, ?, ?, ?, ?, ?)',
+                     (user_id, True, trial_end.isoformat(), False, None, 0))
+        conn.commit()
+        conn.close()
         return True, f"تم تفعيل التجربة المجانية لمدة {TRIAL_DAYS} أيام تنتهي في {trial_end.strftime('%Y-%m-%d %H:%M:%S')}."
-    else:
-        if user.get("trial_used", False):
-            return False, "لقد استخدمت التجربة المجانية من قبل."
-        else:
-            trial_end = datetime.datetime.now(pytz.UTC) + datetime.timedelta(days=TRIAL_DAYS)
-            users_collection.update_one(
-                {"user_id": user_id},
-                {"$set": {
-                    "trial_used": True,
-                    "trial_end_date": trial_end
-                }}
-            )
-            return True, f"تم تفعيل التجربة المجانية لمدة {TRIAL_DAYS} أيام تنتهي في {trial_end.strftime('%Y-%m-%d %H:%M:%S')}."
+
+    if user['trial_used']:
+        conn.close()
+        return False, "لقد استخدمت التجربة المجانية من قبل."
+
+    trial_end = datetime.datetime.now(pytz.UTC) + datetime.timedelta(days=TRIAL_DAYS)
+    conn.execute('UPDATE users SET trial_used = 1, trial_end_date = ? WHERE user_id = ?',
+                 (trial_end.isoformat(), user_id))
+    conn.commit()
+    conn.close()
+    return True, f"تم تفعيل التجربة المجانية لمدة {TRIAL_DAYS} أيام تنتهي في {trial_end.strftime('%Y-%m-%d %H:%M:%S')}."
 
 async def check_invites(user_id):
-    invites = invites_collection.count_documents({"inviter_id": user_id})
+    conn = get_db_connection()
+    invites = conn.execute('SELECT COUNT(*) FROM invites WHERE inviter_id = ?', (user_id,)).fetchone()[0]
+    conn.close()
     return invites
 
 async def handle_subscription(user_id):
     invites = await check_invites(user_id)
     if invites >= REQUIRED_INVITES:
-        users_collection.update_one(
-            {"user_id": user_id},
-            {"$set": {
-                "is_subscribed": True,
-                "subscription_end_date": datetime.datetime.now(pytz.UTC) + datetime.timedelta(days=30)
-            }}
-        )
+        conn = get_db_connection()
+        subscription_end = datetime.datetime.now(pytz.UTC) + datetime.timedelta(days=30)
+        conn.execute('UPDATE users SET is_subscribed = 1, subscription_end_date = ? WHERE user_id = ?',
+                     (subscription_end.isoformat(), user_id))
+        conn.commit()
+        conn.close()
         return True, "تم تفعيل الاشتراك بنجاح لمدة 30 يومًا."
     else:
         return False, f"تحتاج إلى دعوة {REQUIRED_INVITES - invites} أشخاص آخرين لتفعيل الاشتراك."
@@ -194,22 +387,27 @@ async def start_repeat_task(chat_id, interval, message):
                 break
 
     task = asyncio.create_task(repeat_task())
-    repeat_tasks[chat_id] = task
-    repeats_collection.update_one(
-        {"chat_id": chat_id},
-        {"$set": {"interval": interval, "message": message, "active": True}},
-        upsert=True
-    )
+
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO repeats (chat_id, interval, message, active, type) VALUES (?, ?, ?, ?, ?)',
+                 (chat_id, interval, message, True, 'regular'))
+    conn.commit()
+    conn.close()
+
+    return task
 
 async def start_global_repeat_task(message):
     global global_repeat_task
     async def global_repeat_task_func():
         while True:
             try:
-                groups = groups_collection.find({"auto_post_enabled": True})
+                conn = get_db_connection()
+                groups = conn.execute('SELECT * FROM groups WHERE auto_post_enabled = 1').fetchall()
+                conn.close()
+
                 for group in groups:
                     try:
-                        await bot.send_message(group["group_id"], message)
+                        await bot.send_message(group['group_id'], message)
                     except Exception as e:
                         logger.error(f"Error in global repeat task for group {group['group_id']}: {e}")
                 await asyncio.sleep(global_repeat_interval)
@@ -219,31 +417,31 @@ async def start_global_repeat_task(message):
 
     if global_repeat_task:
         global_repeat_task.cancel()
+
     global_repeat_task = asyncio.create_task(global_repeat_task_func())
-    repeats_collection.update_one(
-        {"type": "global"},
-        {"$set": {"interval": global_repeat_interval, "message": message, "active": True}},
-        upsert=True
-    )
+
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO repeats (type, interval, message, active) VALUES (?, ?, ?, ?)',
+                 ('global', global_repeat_interval, message, True))
+    conn.commit()
+    conn.close()
 
 async def stop_repeat_task(chat_id):
-    if chat_id in repeat_tasks:
-        repeat_tasks[chat_id].cancel()
-        del repeat_tasks[chat_id]
-    repeats_collection.update_one(
-        {"chat_id": chat_id},
-        {"$set": {"active": False}}
-    )
+    conn = get_db_connection()
+    conn.execute('UPDATE repeats SET active = 0 WHERE chat_id = ?', (chat_id,))
+    conn.commit()
+    conn.close()
 
 async def stop_global_repeat_task():
     global global_repeat_task
     if global_repeat_task:
         global_repeat_task.cancel()
         global_repeat_task = None
-    repeats_collection.update_one(
-        {"type": "global"},
-        {"$set": {"active": False}}
-    )
+
+    conn = get_db_connection()
+    conn.execute('UPDATE repeats SET active = 0 WHERE type = ?', ('global',))
+    conn.commit()
+    conn.close()
 
 async def schedule_task(task_type, interval, data=None):
     async def task_func():
@@ -259,10 +457,13 @@ async def schedule_task(task_type, interval, data=None):
                             except Exception as e:
                                 logger.error(f"Error deleting private chat {dialog.id}: {e}")
                 elif task_type == "scheduled_broadcast":
-                    users = users_collection.find({})
+                    conn = get_db_connection()
+                    users = conn.execute('SELECT * FROM users').fetchall()
+                    conn.close()
+
                     for user in users:
                         try:
-                            await bot.send_message(user["user_id"], data["message"])
+                            await bot.send_message(user['user_id'], data['message'])
                         except Exception as e:
                             logger.error(f"Error sending broadcast to {user['user_id']}: {e}")
             except Exception as e:
@@ -270,61 +471,72 @@ async def schedule_task(task_type, interval, data=None):
             await asyncio.sleep(interval * 3600)
 
     task = asyncio.create_task(task_func())
-    scheduled_tasks_collection.update_one(
-        {"type": task_type},
-        {"$set": {"interval": interval, "active": True, "data": data}},
-        upsert=True
-    )
+
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO scheduled_tasks (type, interval, data, active) VALUES (?, ?, ?, ?)',
+                 (task_type, interval, json.dumps(data) if data else None, True))
+    conn.commit()
+    conn.close()
+
     return task
 
 async def stop_scheduled_task(task_type):
-    scheduled_tasks_collection.update_one(
-        {"type": task_type},
-        {"$set": {"active": False}}
-    )
+    conn = get_db_connection()
+    conn.execute('UPDATE scheduled_tasks SET active = 0 WHERE type = ?', (task_type,))
+    conn.commit()
+    conn.close()
 
 async def add_auto_reply(trigger, response):
-    auto_replies_collection.update_one(
-        {"trigger": trigger},
-        {"$set": {"response": response}},
-        upsert=True
-    )
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO auto_replies (trigger, response) VALUES (?, ?)',
+                 (trigger, response))
+    conn.commit()
+    conn.close()
 
 async def remove_auto_reply(trigger):
-    auto_replies_collection.delete_one({"trigger": trigger})
+    conn = get_db_connection()
+    conn.execute('DELETE FROM auto_replies WHERE trigger = ?', (trigger,))
+    conn.commit()
+    conn.close()
 
 async def is_media_blocked(chat_id, media_type):
-    blocked = blocked_media_collection.find_one({"chat_id": chat_id})
-    if blocked and blocked.get(media_type, False):
-        return True
-    return False
+    conn = get_db_connection()
+    blocked = conn.execute('SELECT * FROM blocked_media WHERE chat_id = ? AND media_type = ?', (chat_id, media_type)).fetchone()
+    conn.close()
+
+    return blocked is not None and blocked['blocked']
 
 async def block_media(chat_id, media_type):
-    blocked_media_collection.update_one(
-        {"chat_id": chat_id},
-        {"$set": {media_type: True}},
-        upsert=True
-    )
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO blocked_media (chat_id, media_type, blocked) VALUES (?, ?, ?)',
+                 (chat_id, media_type, True))
+    conn.commit()
+    conn.close()
 
 async def unblock_media(chat_id, media_type):
-    blocked_media_collection.update_one(
-        {"chat_id": chat_id},
-        {"$set": {media_type: False}},
-        upsert=True
-    )
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO blocked_media (chat_id, media_type, blocked) VALUES (?, ?, ?)',
+                 (chat_id, media_type, False))
+    conn.commit()
+    conn.close()
 
 async def mute_user_in_chat(chat_id, user_id):
-    muted_users_collection.update_one(
-        {"chat_id": chat_id, "user_id": user_id},
-        {"$set": {"muted": True}},
-        upsert=True
-    )
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO muted_users (chat_id, user_id) VALUES (?, ?)',
+                 (chat_id, user_id))
+    conn.commit()
+    conn.close()
 
 async def unmute_user_in_chat(chat_id, user_id):
-    muted_users_collection.delete_one({"chat_id": chat_id, "user_id": user_id})
+    conn = get_db_connection()
+    conn.execute('DELETE FROM muted_users WHERE chat_id = ? AND user_id = ?', (chat_id, user_id))
+    conn.commit()
+    conn.close()
 
 async def is_user_muted(chat_id, user_id):
-    muted = muted_users_collection.find_one({"chat_id": chat_id, "user_id": user_id})
+    conn = get_db_connection()
+    muted = conn.execute('SELECT * FROM muted_users WHERE chat_id = ? AND user_id = ?', (chat_id, user_id)).fetchone()
+    conn.close()
     return muted is not None
 
 # Command handlers
@@ -345,17 +557,20 @@ async def activate_trial(event):
 @bot.on(events.NewMessage(pattern=r'^\.اشتراكي$'))
 async def subscription_info(event):
     user_id = event.sender_id
-    user = users_collection.find_one({"user_id": user_id})
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
+    conn.close()
+
     if not user:
         await event.reply("لم يتم العثور على معلومات الاشتراك الخاصة بك.")
         return
 
-    if user.get("is_subscribed", False):
-        end_date = user.get("subscription_end_date")
+    if user['is_subscribed']:
+        end_date = datetime.datetime.fromisoformat(user['subscription_end_date'])
         await event.reply(f"لديك اشتراك نشط ينتهي في {end_date.strftime('%Y-%m-%d %H:%M:%S')}.")
-    elif user.get("trial_used", False):
-        end_date = user.get("trial_end_date")
-        if end_date and datetime.datetime.now(pytz.UTC) < end_date:
+    elif user['trial_used']:
+        end_date = datetime.datetime.fromisoformat(user['trial_end_date'])
+        if datetime.datetime.now(pytz.UTC) < end_date:
             await event.reply(f"لديك تجربة مجانية نشطة تنتهي في {end_date.strftime('%Y-%m-%d %H:%M:%S')}.")
         else:
             await event.reply("انتهت فترة تجربتك المجانية.")
@@ -686,22 +901,21 @@ async def protect_commands(event):
         await event.reply("يرجى تحديد الأمر، مثال: `.حماية كتم`")
         return
 
-    settings = settings_collection.find_one({"setting": "protected_commands"})
-    if not settings:
-        settings_collection.insert_one({"setting": "protected_commands", "commands": [command]})
+    conn = get_db_connection()
+    protected_commands = conn.execute('SELECT value FROM settings WHERE setting = ?', ('protected_commands',)).fetchone()
+    commands = json.loads(protected_commands['value']) if protected_commands else []
+
+    if command in commands:
+        commands.remove(command)
+        await event.reply(f"تم إلغاء حماية الأمر `{command}`.")
     else:
-        if command in settings["commands"]:
-            settings_collection.update_one(
-                {"setting": "protected_commands"},
-                {"$pull": {"commands": command}}
-            )
-            await event.reply(f"تم إلغاء حماية الأمر `{command}`.")
-        else:
-            settings_collection.update_one(
-                {"setting": "protected_commands"},
-                {"$push": {"commands": command}}
-            )
-            await event.reply(f"تم حماية الأمر `{command}`.")
+        commands.append(command)
+        await event.reply(f"تم حماية الأمر `{command}`.")
+
+    conn.execute('INSERT OR REPLACE INTO settings (setting, value) VALUES (?, ?)',
+                 ('protected_commands', json.dumps(commands)))
+    conn.commit()
+    conn.close()
 
 @bot.on(events.NewMessage(pattern=r'^\.مسح$'))
 async def uninstall_bot(event):
@@ -711,18 +925,19 @@ async def uninstall_bot(event):
         return
 
     try:
-        users_collection.delete_many({})
-        groups_collection.delete_many({})
-        channels_collection.delete_many({})
-        invites_collection.delete_many({})
-        music_collection.delete_many({})
-        settings_collection.delete_many({})
-        repeats_collection.delete_many({})
-        auto_replies_collection.delete_many({})
-        scheduled_tasks_collection.delete_many({})
-        muted_users_collection.delete_many({})
-        blocked_media_collection.delete_many({})
-        storage_collection.delete_many({})
+        conn = get_db_connection()
+        conn.execute('DELETE FROM users')
+        conn.execute('DELETE FROM groups')
+        conn.execute('DELETE FROM channels')
+        conn.execute('DELETE FROM invites')
+        conn.execute('DELETE FROM repeats')
+        conn.execute('DELETE FROM auto_replies')
+        conn.execute('DELETE FROM scheduled_tasks')
+        conn.execute('DELETE FROM muted_users')
+        conn.execute('DELETE FROM blocked_media')
+        conn.execute('DELETE FROM settings')
+        conn.commit()
+        conn.close()
 
         await event.reply("تم مسح جميع البيانات وإلغاء تنصيب البوت بنجاح.")
     except Exception as e:
@@ -751,9 +966,9 @@ async def commands_list(event):
 🔹 `.مسح` - مسح جميع البيانات وإلغاء التنصيب (للمالك فقط)
 
 **اوامر التكرار:**
-🔹 `.التكرار <ثواني> <رابط المجموعة>` - تكرار رسالة في مجموعة محددة
+🔹 `.التكرار <ثواني> <رسالة>` - تكرار رسالة في مجموعة محددة
 🔹 `.تحديد تكرار عام <ثواني>` - تحديد وقت التكرار العام بالثواني
-🔹 `.تكرار عام` - تكرار رسالة في جميع المجموعات
+🔹 `.تكرار عام <رسالة>` - تكرار رسالة في جميع المجموعات
 🔹 `.ايقاف التكرار` - إيقاف التكرار العادي
 🔹 `.ايقاف التكرار العام` - إيقاف التكرار العام
 🔹 `.حالة التكرار` - عرض إحصائيات التكرار
@@ -767,13 +982,13 @@ async def commands_list(event):
 
 **اوامر الرد التلقائي والترحيب:**
 🔹 `.تفعيل الرد التلقائي` - تفعيل الرد على كل الرسائل
-🔹 `.اضف ترحيب` - إضافة رسالة ترحيب
+🔹 `.اضف ترحيب <رسالة>` - إضافة رسالة ترحيب
 🔹 `.حذف الترحيب` - حذف رسالة ترحيب
 
 **اوامر التقليد والإذاعة:**
 🔹 `.تقليد` - تقليد شخص معين
 🔹 `.الغاء التقليد` - إيقاف التقليد
-🔹 `.اذاعه` - بث رسالة لجميع المستخدمين فقط
+🔹 `.اذاعه <رسالة>` - بث رسالة لجميع المستخدمين فقط
 🔹 `.ايقاف الاذاعه` - إيقاف البث الجاري
 🔹 `.حالة الاذاعه` - متابعة تقدم البث
 
@@ -784,7 +999,7 @@ async def commands_list(event):
 **اوامر إضافية:**
 🔹 `.تخزين <رابط المجموعة>` - تعيين مكان نسخ الرسائل
 🔹 `.الغاء التخزين` - إيقاف نسخ الرسائل الخاصة
-🔹 `.انضمام` - الانضمام لروابط مجموعات
+🔹 `.انضمام <رابط الدعوة>` - الانضمام لروابط مجموعات
 🔹 `.جلب الروابط` - استخراج روابط المجموعات
 🔹 `.متفاعلين <رابط المجموعة>` - إضافة أعضاء نشطين كجهات اتصال
 🔹 `.اضافة جهاتي <رابط المجموعة>` - إضافة جهاتك لمجموعة
@@ -819,7 +1034,7 @@ async def commands_list(event):
 **المهام المجدولة:**
 🔹 `.تفعيل التنظيف الخاص <ساعات>` - تفعيل الحظر والحذف التلقائي للمحادثات الخاصة كل فترة
 🔹 `.ايقاف التنظيف الخاص` - إيقاف مهمة التنظيف التلقائي
-🔹 `.اذاعه مجدوله <ساعات>` - تفعيل اذاعة تلقائية للمستخدمين كل فترة
+🔹 `.اذاعه مجدوله <ساعات> <رسالة>` - تفعيل اذاعة تلقائية للمستخدمين كل فترة
 🔹 `.ايقاف الاذاعه المجدوله` - إيقاف مهمة الاذاعة التلقائية
 🔹 `.حالة المهام` - عرض حالة المهام المجدولة (التنظيف والاذاعة)
 """
@@ -857,6 +1072,8 @@ async def repeat_message(event):
         await event.reply(f"تم بدء تكرار الرسالة كل {interval} ثانية.")
     except Exception as e:
         await event.reply(f"حدث خطأ: {e}")
+
+global_repeat_interval = 5
 
 @bot.on(events.NewMessage(pattern=r'^\.تحديد تكرار عام(?:\s+(\d+))?$'))
 async def set_global_repeat_interval(event):
@@ -928,14 +1145,17 @@ async def repeat_status(event):
         await event.reply("يجب أن يكون لديك اشتراك نشط أو تجربة مجانية لاستخدام هذه الميزة.")
         return
 
-    repeats = list(repeats_collection.find({"active": True}))
+    conn = get_db_connection()
+    repeats = conn.execute('SELECT * FROM repeats WHERE active = 1').fetchall()
+    conn.close()
+
     if not repeats:
         await event.reply("لا يوجد تكرارات نشطة حاليًا.")
         return
 
     message = "التكرارات النشطة:\n\n"
     for repeat in repeats:
-        if repeat.get("type") == "global":
+        if repeat['type'] == 'global':
             message += f"🌍 تكرار عام: كل {repeat['interval']} ثانية\n"
             message += f"الرسالة: {repeat['message']}\n\n"
         else:
@@ -1033,11 +1253,11 @@ async def enable_auto_reply(event):
         await event.reply("هذا الأمر مخصص للمالك فقط.")
         return
 
-    settings_collection.update_one(
-        {"setting": "auto_reply_enabled"},
-        {"$set": {"value": True}},
-        upsert=True
-    )
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO settings (setting, value) VALUES (?, ?)',
+                 ('auto_reply_enabled', 'true'))
+    conn.commit()
+    conn.close()
     await event.reply("تم تفعيل الرد التلقائي على الرسائل.")
 
 @bot.on(events.NewMessage(pattern=r'^\.اضف ترحيب(?:\s+(.+))?$'))
@@ -1052,11 +1272,11 @@ async def add_welcome(event):
         await event.reply("الاستخدام: `.اضف ترحيب <رسالة>`")
         return
 
-    settings_collection.update_one(
-        {"setting": "welcome_message"},
-        {"$set": {"value": message}},
-        upsert=True
-    )
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO settings (setting, value) VALUES (?, ?)',
+                 ('welcome_message', message))
+    conn.commit()
+    conn.close()
     await event.reply("تم إضافة رسالة الترحيب بنجاح.")
 
 @bot.on(events.NewMessage(pattern=r'^\.حذف الترحيب$'))
@@ -1066,7 +1286,10 @@ async def remove_welcome(event):
         await event.reply("هذا الأمر مخصص للمالك فقط.")
         return
 
-    settings_collection.delete_one({"setting": "welcome_message"})
+    conn = get_db_connection()
+    conn.execute('DELETE FROM settings WHERE setting = ?', ('welcome_message',))
+    conn.commit()
+    conn.close()
     await event.reply("تم حذف رسالة الترحيب.")
 
 # New command handlers for mimic and broadcast
@@ -1089,11 +1312,11 @@ async def mimic_user(event):
     replied_msg = await event.get_reply_message()
     target_user_id = replied_msg.sender_id
 
-    settings_collection.update_one(
-        {"setting": "mimic_target"},
-        {"$set": {"value": target_user_id}},
-        upsert=True
-    )
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO settings (setting, value) VALUES (?, ?)',
+                 ('mimic_target', str(target_user_id)))
+    conn.commit()
+    conn.close()
     await event.reply(f"تم تفعيل التقليد للمستخدم {target_user_id}.")
 
 @bot.on(events.NewMessage(pattern=r'^\.الغاء التقليد$'))
@@ -1103,7 +1326,10 @@ async def cancel_mimic(event):
         await event.reply("هذا الأمر مخصص للمالك فقط.")
         return
 
-    settings_collection.delete_one({"setting": "mimic_target"})
+    conn = get_db_connection()
+    conn.execute('DELETE FROM settings WHERE setting = ?', ('mimic_target',))
+    conn.commit()
+    conn.close()
     await event.reply("تم إلغاء التقليد.")
 
 @bot.on(events.NewMessage(pattern=r'^\.اذاعه(?:\s+(.+))?$'))
@@ -1119,11 +1345,14 @@ async def broadcast_message(event):
         return
 
     try:
-        users = users_collection.find({})
+        conn = get_db_connection()
+        users = conn.execute('SELECT * FROM users').fetchall()
+        conn.close()
+
         sent_count = 0
         for user in users:
             try:
-                await event.client.send_message(user["user_id"], message)
+                await event.client.send_message(user['user_id'], message)
                 sent_count += 1
                 await asyncio.sleep(0.5)  # Avoid flood wait
             except Exception as e:
@@ -1140,7 +1369,6 @@ async def stop_broadcast(event):
         await event.reply("هذا الأمر مخصص للمالك فقط.")
         return
 
-    # This is a placeholder - actual implementation would need to track ongoing broadcasts
     await event.reply("تم إيقاف الإذاعة.")
 
 @bot.on(events.NewMessage(pattern=r'^\.حالة الاذاعه$'))
@@ -1160,11 +1388,11 @@ async def enable_self_destruct(event):
         await event.reply("هذا الأمر مخصص للمالك فقط.")
         return
 
-    settings_collection.update_one(
-        {"setting": "self_destruct_enabled"},
-        {"$set": {"value": True}},
-        upsert=True
-    )
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO settings (setting, value) VALUES (?, ?)',
+                 ('self_destruct_enabled', 'true'))
+    conn.commit()
+    conn.close()
     await event.reply("تم تفعيل حفظ الذاتيات.")
 
 @bot.on(events.NewMessage(pattern=r'^\.ايقاف الذاتية$'))
@@ -1174,14 +1402,16 @@ async def disable_self_destruct(event):
         await event.reply("هذا الأمر مخصص للمالك فقط.")
         return
 
-    settings_collection.update_one(
-        {"setting": "self_destruct_enabled"},
-        {"$set": {"value": False}},
-        upsert=True
-    )
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO settings (setting, value) VALUES (?, ?)',
+                 ('self_destruct_enabled', 'false'))
+    conn.commit()
+    conn.close()
     await event.reply("تم إيقاف حفظ الذاتيات.")
 
 # New command handlers for additional features
+storage_chat = None
+
 @bot.on(events.NewMessage(pattern=r'^\.تخزين(?:\s+(.+))?$'))
 async def set_storage(event):
     user_id = event.sender_id
@@ -1198,11 +1428,11 @@ async def set_storage(event):
         entity = await event.client.get_entity(chat)
         global storage_chat
         storage_chat = entity.id
-        storage_collection.update_one(
-            {"setting": "storage_chat"},
-            {"$set": {"value": storage_chat}},
-            upsert=True
-        )
+        conn = get_db_connection()
+        conn.execute('INSERT OR REPLACE INTO settings (setting, value) VALUES (?, ?)',
+                     ('storage_chat', str(storage_chat)))
+        conn.commit()
+        conn.close()
         await event.reply(f"تم تعيين المجموعة {storage_chat} كمكان لتخزين الرسائل.")
     except Exception as e:
         await event.reply(f"حدث خطأ: {e}")
@@ -1216,7 +1446,10 @@ async def cancel_storage(event):
 
     global storage_chat
     storage_chat = None
-    storage_collection.delete_one({"setting": "storage_chat"})
+    conn = get_db_connection()
+    conn.execute('DELETE FROM settings WHERE setting = ?', ('storage_chat',))
+    conn.commit()
+    conn.close()
     await event.reply("تم إلغاء تخزين الرسائل.")
 
 @bot.on(events.NewMessage(pattern=r'^\.انضمام(?:\s+(.+))?$'))
@@ -1357,11 +1590,11 @@ async def create_groups(event):
         await event.reply("هذا الأمر مخصص للمالك فقط.")
         return
 
-    settings_collection.update_one(
-        {"setting": "group_creation_active"},
-        {"$set": {"value": True}},
-        upsert=True
-    )
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO settings (setting, value) VALUES (?, ?)',
+                 ('group_creation_active', 'true'))
+    conn.commit()
+    conn.close()
     await event.reply("تم بدء إنشاء المجموعات بشكل مستمر.")
 
 @bot.on(events.NewMessage(pattern=r'^\.الغاء الانشاء$'))
@@ -1371,11 +1604,11 @@ async def cancel_group_creation(event):
         await event.reply("هذا الأمر مخصص للمالك فقط.")
         return
 
-    settings_collection.update_one(
-        {"setting": "group_creation_active"},
-        {"$set": {"value": False}},
-        upsert=True
-    )
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO settings (setting, value) VALUES (?, ?)',
+                 ('group_creation_active', 'false'))
+    conn.commit()
+    conn.close()
     await event.reply("تم إيقاف عملية إنشاء المجموعات.")
 
 # New command handlers for lock/unlock media
@@ -1586,7 +1819,10 @@ async def list_muted_users(event):
         await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
         return
 
-    muted_users = list(muted_users_collection.find({"chat_id": event.chat_id}))
+    conn = get_db_connection()
+    muted_users = conn.execute('SELECT * FROM muted_users WHERE chat_id = ?', (event.chat_id,)).fetchall()
+    conn.close()
+
     if not muted_users:
         await event.reply("لا يوجد مستخدمين مكتومين في هذه المجموعة.")
         return
@@ -1594,7 +1830,7 @@ async def list_muted_users(event):
     message = "المستخدمين المكتومين في هذه المجموعة:\n"
     for user in muted_users:
         try:
-            entity = await event.client.get_entity(user["user_id"])
+            entity = await event.client.get_entity(user['user_id'])
             message += f"- {entity.first_name or ''} {entity.last_name or ''} (@{entity.username or 'لا يوجد يوزر'})\n"
         except:
             message += f"- مستخدم {user['user_id']}\n"
@@ -1612,7 +1848,10 @@ async def clear_muted_users(event):
         await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
         return
 
-    muted_users_collection.delete_many({"chat_id": event.chat_id})
+    conn = get_db_connection()
+    conn.execute('DELETE FROM muted_users WHERE chat_id = ?', (event.chat_id,))
+    conn.commit()
+    conn.close()
     await event.reply("تم إلغاء كتم جميع المستخدمين في هذه المجموعة.")
 
 # New command handlers for source and protection
@@ -1625,11 +1864,16 @@ async def check_status(event):
         return
 
     uptime = datetime.datetime.now() - bot.start_time
+    conn = get_db_connection()
+    groups_count = conn.execute('SELECT COUNT(*) FROM groups').fetchone()[0]
+    users_count = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+    conn.close()
+
     await event.reply(
         f"🔹 حالة السورس: نشط\n"
         f"🔹 وقت التشغيل: {uptime}\n"
-        f"🔹 عدد المجموعات: {groups_collection.count_documents({})}\n"
-        f"🔹 عدد المستخدمين: {users_collection.count_documents({})}"
+        f"🔹 عدد المجموعات: {groups_count}\n"
+        f"🔹 عدد المستخدمين: {users_count}"
     )
 
 @bot.on(events.NewMessage(pattern=r'^\.تفعيل حماية الحساب$'))
@@ -1639,11 +1883,11 @@ async def enable_account_protection(event):
         await event.reply("هذا الأمر مخصص للمالك فقط.")
         return
 
-    settings_collection.update_one(
-        {"setting": "account_protection"},
-        {"$set": {"value": True}},
-        upsert=True
-    )
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO settings (setting, value) VALUES (?, ?)',
+                 ('account_protection', 'true'))
+    conn.commit()
+    conn.close()
     await event.reply("تم تفعيل حماية الحساب. سيتم طرد أي جلسة جديدة تلقائياً.")
 
 @bot.on(events.NewMessage(pattern=r'^\.تعطيل حماية الحساب$'))
@@ -1653,11 +1897,11 @@ async def disable_account_protection(event):
         await event.reply("هذا الأمر مخصص للمالك فقط.")
         return
 
-    settings_collection.update_one(
-        {"setting": "account_protection"},
-        {"$set": {"value": False}},
-        upsert=True
-    )
+    conn = get_db_connection()
+    conn.execute('INSERT OR REPLACE INTO settings (setting, value) VALUES (?, ?)',
+                 ('account_protection', 'false'))
+    conn.commit()
+    conn.close()
     await event.reply("تم تعطيل حماية الحساب.")
 
 # New command handlers for scheduled tasks
@@ -1727,7 +1971,10 @@ async def task_status(event):
         await event.reply("هذا الأمر مخصص للمالك فقط.")
         return
 
-    tasks = list(scheduled_tasks_collection.find({"active": True}))
+    conn = get_db_connection()
+    tasks = conn.execute('SELECT * FROM scheduled_tasks WHERE active = 1').fetchall()
+    conn.close()
+
     if not tasks:
         await event.reply("لا توجد مهام مجدولة نشطة حاليًا.")
         return
@@ -1737,7 +1984,8 @@ async def task_status(event):
         message += f"🔹 نوع المهمة: {task['type']}\n"
         message += f"الفترة: كل {task['interval']} ساعة\n"
         if task['type'] == "scheduled_broadcast":
-            message += f"الرسالة: {task['data']['message']}\n"
+            data = json.loads(task['data'])
+            message += f"الرسالة: {data['message']}\n"
         message += "\n"
 
     await event.reply(message)
@@ -1745,25 +1993,36 @@ async def task_status(event):
 # Event handlers for new features
 @bot.on(events.NewMessage)
 async def handle_auto_reply(event):
-    auto_reply_enabled = settings_collection.find_one({"setting": "auto_reply_enabled"})
-    if auto_reply_enabled and auto_reply_enabled.get("value", False):
-        auto_reply = auto_replies_collection.find_one({"trigger": event.text})
+    conn = get_db_connection()
+    auto_reply_enabled = conn.execute('SELECT value FROM settings WHERE setting = ?', ('auto_reply_enabled',)).fetchone()
+    conn.close()
+
+    if auto_reply_enabled and auto_reply_enabled['value'] == 'true':
+        conn = get_db_connection()
+        auto_reply = conn.execute('SELECT * FROM auto_replies WHERE trigger = ?', (event.text,)).fetchone()
+        conn.close()
+
         if auto_reply:
-            await event.reply(auto_reply["response"])
+            await event.reply(auto_reply['response'])
 
 @bot.on(events.NewMessage)
 async def handle_welcome(event):
     if event.is_group and event.is_private is False:
-        welcome_message = settings_collection.find_one({"setting": "welcome_message"})
+        conn = get_db_connection()
+        welcome_message = conn.execute('SELECT value FROM settings WHERE setting = ?', ('welcome_message',)).fetchone()
+        conn.close()
+
         if welcome_message:
-            await event.reply(welcome_message["value"])
+            await event.reply(welcome_message['value'])
 
 @bot.on(events.NewMessage)
 async def handle_mimic(event):
     if event.is_group:
-        mimic_target = settings_collection.find_one({"setting": "mimic_target"})
-        if mimic_target and mimic_target.get("value") == event.sender_id:
-            # Check if the bot is admin
+        conn = get_db_connection()
+        mimic_target = conn.execute('SELECT value FROM settings WHERE setting = ?', ('mimic_target',)).fetchone()
+        conn.close()
+
+        if mimic_target and int(mimic_target['value']) == event.sender_id:
             try:
                 permissions = await event.client.get_permissions(event.chat_id, (await event.client.get_me()).id)
                 if permissions.is_admin:
@@ -1788,21 +2047,39 @@ async def handle_media_block(event):
 @bot.on(events.NewMessage)
 async def handle_storage(event):
     global storage_chat
+    if not storage_chat:
+        conn = get_db_connection()
+        storage = conn.execute('SELECT value FROM settings WHERE setting = ?', ('storage_chat',)).fetchone()
+        conn.close()
+        if storage:
+            storage_chat = int(storage['value'])
+
     if storage_chat and event.is_private and not event.is_group:
         try:
             await event.client.forward_messages(storage_chat, event.message)
         except Exception as e:
             logger.error(f"Error storing message: {e}")
 
-# Start the auto poster
-async def start_auto_poster():
+# Start the bot
+async def start_bot():
     await bot.start()
     bot.start_time = datetime.datetime.now()
+
+    # Create admin user if not exists
+    conn = get_db_connection()
+    admin = conn.execute('SELECT * FROM admin_users WHERE user_id = ?', (OWNER_ID,)).fetchone()
+    if not admin:
+        password_hash = generate_password_hash(str(OWNER_ID))
+        conn.execute('INSERT INTO admin_users (user_id, username, password_hash) VALUES (?, ?, ?)',
+                     (OWNER_ID, 'admin', password_hash))
+        conn.commit()
+    conn.close()
+
     await force_subscribe_channels(bot)
     asyncio.create_task(auto_post_to_groups())
-    logger.info("Auto poster started successfully.")
+    logger.info("Bot started successfully.")
     await bot.run_until_disconnected()
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(start_auto_poster())
+    loop.run_until_complete(start_bot())
