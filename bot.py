@@ -442,12 +442,12 @@ async def start(event):
             [Button.inline(f"المميزات", b"features")],
             [Button.url(f"المبرمج", DEVELOPER_LINK)]
         ]
-
-text = f"{SPARK} <b>أهلاً بيك في بوت النشر المتطور الاحترافي</b>\n\n"
-text += f"{SPARK} <b>الاشتراك: {days} يوم متبقي</b>\n"
-text += f"{SPARK} <b>الرسائل المرسله: {sent}</b>\n"
-text += f"{SPARK} <b>النشر: {'يعمل' if acc and acc['active'] else 'متوقف'}</b>\n\n"
-text += f"{SPARK} <b>كل شيئ في واجهة واحدة</b>"
+        welcome_text = 
+    text = f"{WRITING} <b>أهلاً بيك في بوت النشر المتطور الاحترافي</b> {GHOST}\n\n"
+    text += f"{ID_CARD} <b>الاشتراك: {days} يوم متبقي</b>\n"
+    text += f"{FOLDER} <b>الرسائل المرسله: {sent}</b>\n"
+    text += f"{UNLOCK} <b>النشر: {'يعمل' if acc and acc['active'] else 'متوقف'}</b>\n\n"
+    text += f"{PLUS} <b>كل شيئ في واجهة واحدة</b>"
 
         await event.reply(welcome_text, buttons=btns, parse_mode='html')
         return
@@ -461,7 +461,7 @@ text += f"{SPARK} <b>كل شيئ في واجهة واحدة</b>"
     text += f"{ID_CARD} <b>الاشتراك: {days} يوم متبقي</b>\n"
     text += f"{FOLDER} <b>الرسائل المرسله: {sent}</b>\n"
     text += f"{UNLOCK} <b>النشر: {'يعمل' if acc and acc['active'] else 'متوقف'}</b>\n\n"
-    text += f"{PLUS} <b>كل حاجة في واجهة واحدة</b>"
+    text += f"{PLUS} <b>كل شيئ في واجهة واحدة</b>"
 
     await event.respond(text, buttons=main_menu(uid), parse_mode='html')
 
