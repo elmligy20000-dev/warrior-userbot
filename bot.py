@@ -12,19 +12,6 @@ BOT_TOKEN = "8914045842:AAEz6MNsGTShwob_M3H0ECy8eOkl2nT5gno"
 ADMINS = 932862531
 
 # Emoji Premium
-🎲 = "<tg-emoji emoji-id='5886716969427672960'>🎲</tg-emoji>"
-🌿 = "<tg-emoji emoji-id='5886462183377739675'>🌿</tg-emoji>"
-👤 = "<tg-emoji emoji-id='5886695331382435915'>👤</tg-emoji>"
-🪐 = "<tg-emoji emoji-id='5886449487454416104'>🪐</tg-emoji>"
-🔅 = "<tg-emoji emoji-id='5884250988184870485'>🔅</tg-emoji>"
-⚡ = "<tg-emoji emoji-id='5886360482847137476'>⚡️</tg-emoji>"
-🎸 = "<tg-emoji emoji-id='5886232789174460116'>🎸</tg-emoji>"
-🕊 = "<tg-emoji emoji-id='5886408161279090563'>🕊</tg-emoji>"
-⚪ = "<tg-emoji emoji-id='5886505777295793908'>⚪️</tg-emoji>"
-🦋 = "<tg-emoji emoji-id='5886242543045189717'>🦋</tg-emoji>"
-✨ = "<tg-emoji emoji-id='5884015001206791984'>✨</tg-emoji>"
-⚡️ = "<tg-emoji emoji-id='5886672924538051950'>⚡️</tg-emoji>"
-
 # Database setup
 conn = sqlite3.connect('bot_sessions.db')
 cursor = conn.cursor()
