@@ -456,9 +456,8 @@ async def start(event):
 
 <b>اختار وابدأ النشر الاحترافي</b>
 """
-
-        await event.reply(welcome_text, buttons=btns, parse_mode='html')
-        return
+            await event.reply(welcome_text, buttons=btns, parse_mode='html')
+            return
 
     days = get_remaining_days(uid)
     acc = get_account(uid)
