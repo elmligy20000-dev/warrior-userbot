@@ -32,7 +32,6 @@ PREMIUM_EMOJIS = [
 API_ID = 20867472
 API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
 BOT_TOKEN = "8914045842:AAEz6MNsGTShwob_M3H0ECy8eOkl2nT5gno"
-ADMIN_ID = 932862531
 ADMIN_USERNAME = 'Programmer_error'  # Replace with your admin username
 DEVELOPER_USERNAMES = ['Programmer_error', 'BRXLI']  # Add developer usernames here
 DB_NAME = 'auto_poster.db'
@@ -906,16 +905,16 @@ async def handle_font_selection(event):
     font = event.data_match.group(1).decode('utf-8')
     await event.edit(add_premium_emojis_to_text(f"<b>➕ إضافة رسالة بريميوم</b>\n\n<b>أرسل الرسالة التي تريد إضافتها بخط {font}:</b>"))
 
-    @client.on(events.NewMessage(from_users=lambda u: u.username == ADMIN_USERNAME))
-    async def handle_premium_message(new_event):
-        text = new_event.text
-        if await add_message(text, is_premium=True, font=font, added_by=new_event.sender_id):
-            await new_event.reply(add_premium_emojis_to_text("<b>✅ تم إضافة الرسالة البريميوم بنجاح!</b>"))
-        else:
-            await new_event.reply(add_premium_emojis_to_text("<b>❌ فشل إضافة الرسالة.</b>"))
+@client.on(events.NewMessage(from_users=lambda u: u.username == ADMIN_USERNAME))
+async def handle_premium_message(new_event):
+    text = new_event.text
+    if await add_message(text, is_premium=True, font=font, added_by=new_event.sender_id):
+        await new_event.reply(add_premium_emojis_to_text("<b>✅ تم إضافة الرسالة البريميوم بنجاح!</b>"))
+    else:
+        await new_event.reply(add_premium_emojis_to_text("<b>❌ فشل إضافة الرسالة.</b>"))
 
-        await manage_messages(new_event)
-        client.remove_event_handler(handle_premium_message)
+    await manage_messages(new_event)
+    client.remove_event_handler(handle_premium_message)
 
 @client.on(events.CallbackQuery(data=b'list_messages'))
 async def list_messages(event):
