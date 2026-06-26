@@ -444,7 +444,6 @@ async def start(event):
         ]
   
     welcome_text = f"""
-    ```python
 <b>أهلاً بيك في بوت النشر المتطور الاحترافي</b>
 
 <b>نشر تلقائي في المجموعات آمن جداً</b>
@@ -456,7 +455,6 @@ async def start(event):
 <b>او اختر باقة مدفوعة بنجوم او راسل المبرمج لشراء اشتراك</b>
 
 <b>اختار وابدأ النشر الاحترافي</b>
-```
 """
 
         await event.reply(welcome_text, buttons=btns, parse_mode='html')
