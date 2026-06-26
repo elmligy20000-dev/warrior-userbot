@@ -442,25 +442,34 @@ async def start(event):
             [Button.inline(f"المميزات", b"features")],
             [Button.url(f"المبرمج", DEVELOPER_LINK)]
         ]
-    text = f"{WRITING} <b>أهلاً بيك في بوت النشر المتطور الاحترافي</b> {GHOST}\n\n"
-    text += f"{ID_CARD} <b>الاشتراك: {days} يوم متبقي</b>\n"
-    text += f"{FOLDER} <b>الرسائل المرسله: {sent}</b>\n"
-    text += f"{UNLOCK} <b>النشر: {'يعمل' if acc and acc['active'] else 'متوقف'}</b>\n\n"
-    text += f"{PLUS} <b>كل شيئ في واجهة واحدة</b>"
+        welcome_text = f"""
+{PLUS} <b>أهلاً بيك في بوت النشر المتطور الاحترافي</b> {SETTINGS}
+
+{WRITING} <b>نشر تلقائي في المجموعات آمن جداً</b> {SETTINGS}
+
+{STORAGE} <b>حماية متقدمة عالية جداً ضد التجميد والفلود</b> {SETTINGS}
+
+{FOLDER} <b>جرب البوت مجاناً {FREE_TRIAL_DAYS} يوم</b> {SETTINGS}
+
+{ID_CARD} <b>او اختر باقة مدفوعة بنجوم او راسل المبرمج لشراء اشتراك</b> {SETTINGS}
+
+{UNLOCK} <b>اختار وابدأ النشر الاحترافي</b> {SETTINGS}
+"""
+        await event.reply(welcome_text, buttons=btns, parse_mode='html')
+        return
 
     days = get_remaining_days(uid)
     acc = get_account(uid)
     acc = get_account_defaults(acc) if acc else None
     sent = acc['sent_count'] if acc else 0
 
-    text = f"{WRITING} <b>أهلاً بيك في بوت النشر المتطور الاحترافي</b> {GHOST}\n\n"
-    text += f"{ID_CARD} <b>الاشتراك: {days} يوم متبقي</b>\n"
-    text += f"{FOLDER} <b>الرسائل المرسله: {sent}</b>\n"
-    text += f"{UNLOCK} <b>النشر: {'يعمل' if acc and acc['active'] else 'متوقف'}</b>\n\n"
-    text += f"{PLUS} <b>كل شيئ في واجهة واحدة</b>"
+    text = f"{SPARK} <b>أهلاً بيك في بوت النشر المتطور الاحترافي</b> {GHOST}\n\n"
+    text += f"{BOLT} <b>الاشتراك: {days} يوم متبقي</b>\n"
+    text += f"{ROCKET} <b>الرسائل المرسله: {sent}</b>\n"
+    text += f"{SIGNAL} <b>النشر: {'يعمل' if acc and acc['active'] else 'متوقف'}</b>\n\n"
+    text += f"{USER} <b>كل حاجة في واجهة واحدة</b>"
 
     await event.respond(text, buttons=main_menu(uid), parse_mode='html')
-
 @bot.on(events.CallbackQuery)
 async def callback(event):
     uid = event.sender_id
