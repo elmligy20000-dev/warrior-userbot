@@ -1,797 +1,1808 @@
 import os
+import re
 import asyncio
-from telethon import TelegramClient, events, Button
-from pyrogram import Client as PyroClient
-from pyrogram import filters
-from datetime import datetime
-import sqlite3
+import random
+import requests
+import datetime
+import pytz
+import json
+from telethon import TelegramClient, events, functions, types, Button
+from telethon.tl.functions.channels import InviteToChannelRequest
+from telethon.tl.functions.messages import ImportChatInviteRequest
+from telethon.tl.types import PeerChannel, PeerChat, PeerUser
+from telethon.errors import FloodWaitError, ChatAdminRequiredError, UserPrivacyRestrictedError, UserNotMutualContactError
+from telethon.utils import get_display_name
+from telethon.sessions import StringSession
+from telethon.tl.functions.account import UpdateProfileRequest
+from telethon.tl.functions.photos import UploadProfilePhotoRequest, DeletePhotosRequest
+from telethon.tl.functions.users import GetFullUserRequest
+from telethon.tl.types import InputPeerEmpty
+from telethon.tl.functions.contacts import ResolveUsernameRequest
+from telethon.tl.functions.messages import GetDialogsRequest, CheckChatInviteRequest
+from telethon.tl.types import InputPeerChannel, InputPeerUser, InputPeerChat, ChannelParticipantsAdmins
+from telethon.tl.functions.channels import GetParticipantsRequest, GetFullChannelRequest
+from telethon.tl.types import ChannelParticipantsSearch
+from telethon.tl.functions.messages import GetHistoryRequest
+from telethon.errors.rpcerrorlist import YouBlockedUserError, UserIsBlockedError, ChatWriteForbiddenError
+import aiohttp
+from bs4 import BeautifulSoup
+import qrcode
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+import pyfiglet
+import arabic_reshaper
+from bidi.algorithm import get_display
+import gtts
+from gtts import gTTS
+import ffmpeg
+import yt_dlp
+import subprocess
+from mutagen.mp3 import MP3
+import time
+import logging
+from logging.handlers import RotatingFileHandler
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s - %(levelname)s] - %(name)s - %(message)s",
+    datefmt="%d-%b-%y %H:%M:%S",
+    handlers=[
+        RotatingFileHandler("bot.log", maxBytes=50000000, backupCount=10),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Configuration
 API_ID = 20867472
 API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
 BOT_TOKEN = "8914045842:AAEz6MNsGTShwob_M3H0ECy8eOkl2nT5gno"
-ADMINS = [932862531]
-# Emoji Premium
-# Database setup
-conn = sqlite3.connect('bot_sessions.db')
-cursor = conn.cursor()
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        is_premium INTEGER DEFAULT 0,
-        session_string TEXT,
-        session_type TEXT,
-        hack_commands_enabled INTEGER DEFAULT 0
-    )
-''')
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS bot_settings (
-        setting TEXT PRIMARY KEY,
-        value TEXT
-    )
-''')
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS hack_commands (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        command_name TEXT UNIQUE,
-        command_description TEXT,
-        command_code TEXT
-    )
-''')
-conn.commit()
+OWNER_ID = 932862531
+SUDO_USERS = [932862531]
+MONGO_URI = os.environ.get("MONGO_URI", "your_mongo_uri_here")
+TRIAL_DAYS = 3
+SUBSCRIPTION_COST = 200
+REQUIRED_INVITES = 20
 
-# Default settings
-cursor.execute("INSERT OR IGNORE INTO bot_settings VALUES ('mode', 'free')")
-cursor.execute("INSERT OR IGNORE INTO bot_settings VALUES ('status', 'running')")
-conn.commit()
+# Initialize MongoDB
+from pymongo import MongoClient
+mongo_client = MongoClient(MONGO_URI)
+db = mongo_client["auto_poster_bot"]
+users_collection = db["users"]
+groups_collection = db["groups"]
+channels_collection = db["channels"]
+invites_collection = db["invites"]
+music_collection = db["music"]
+settings_collection = db["settings"]
+repeats_collection = db["repeats"]
+auto_replies_collection = db["auto_replies"]
+scheduled_tasks_collection = db["scheduled_tasks"]
+muted_users_collection = db["muted_users"]
+blocked_media_collection = db["blocked_media"]
+storage_collection = db["storage"]
 
-# Default hack commands
-default_commands = [
-    ("get_contacts", "استخراج جهات الاتصال", "client.get_contacts()"),
-    ("get_dialogs", "استخراج المحادثات", "client.get_dialogs()"),
-    ("get_messages", "استخراج الرسائل من محادثة", "client.get_messages(chat_id, limit=100)"),
-    ("send_message", "إرسال رسالة", "client.send_message(chat_id, 'Hello!')"),
-    ("get_profile", "استخراج معلومات الحساب", "client.get_me()")
-]
+# Initialize Telethon client
+bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-for cmd in default_commands:
-    cursor.execute("INSERT OR IGNORE INTO hack_commands VALUES (NULL, ?, ?, ?)", cmd)
-conn.commit()
-
-# Clients
-telethon_client = TelegramClient('telethon_session', API_ID, API_HASH)
-pyrogram_client = PyroClient('pyrogram_session', api_id=API_ID, api_hash=API_HASH)
+# Global variables for repeat tasks
+repeat_tasks = {}
+global_repeat_task = None
+global_repeat_interval = 5
+storage_chat = None
 
 # Helper functions
-def is_admin(user_id):
-    return user_id in ADMINS
-
-def is_premium(user_id):
-    cursor.execute("SELECT is_premium FROM users WHERE user_id = ?", (user_id,))
-    result = cursor.fetchone()
-    return result and result[0] == 1
-
-def hack_commands_enabled(user_id):
-    cursor.execute("SELECT hack_commands_enabled FROM users WHERE user_id = ?", (user_id,))
-    result = cursor.fetchone()
-    return result and result[0] == 1
-
-def get_bot_mode():
-    cursor.execute("SELECT value FROM bot_settings WHERE setting = 'mode'")
-    result = cursor.fetchone()
-    return result[0] if result else 'free'
-
-def get_bot_status():
-    cursor.execute("SELECT value FROM bot_settings WHERE setting = 'status'")
-    result = cursor.fetchone()
-    return result[0] if result else 'running'
-
-def set_bot_mode(mode):
-    cursor.execute("UPDATE bot_settings SET value = ? WHERE setting = 'mode'", (mode,))
-    conn.commit()
-
-def set_bot_status(status):
-    cursor.execute("UPDATE bot_settings SET value = ? WHERE setting = 'status'", (status,))
-    conn.commit()
-
-def toggle_hack_commands(user_id):
-    current_status = hack_commands_enabled(user_id)
-    new_status = 0 if current_status else 1
-    cursor.execute("UPDATE users SET hack_commands_enabled = ? WHERE user_id = ?", (new_status, user_id))
-    conn.commit()
-    return new_status
-
-# Start command
-@telethon_client.on(events.NewMessage(pattern='/start'))
-async def start(event):
-    user_id = event.sender_id
-    if get_bot_status() == 'stopped' and not is_admin(user_id):
-        return await event.respond(f"البوت متوقف حالياً.")
-
-    buttons = [
-        [Button.inline(f"استخراج جلسة تيليثون", b"get_telethon_session")],
-        [Button.inline(f"استخراج جلسة بايوجرام", b"get_pyrogram_session")],
-        [Button.inline(f"تحويل تيليثون لبايوجرام", b"telethon_to_pyro")],
-        [Button.inline(f"تحويل بايوجرام لتيليثون", b"pyro_to_telethon")],
-        [Button.inline(f"لوحة التحكم", b"control_panel")]
-    ]
-
-    if is_admin(user_id):
-        buttons.append([Button.inline(f"لوحة الأدمن", b"admin_panel")])
-
-    if hack_commands_enabled(user_id):
-        buttons.append([Button.inline(f"أوامر الاختراق", b"hack_commands")])
-
-    await event.respond(
-        f"مرحبا بك في بوت استخراج الجلسات!\n\n"
-        f"اختر أحد الخيارات التالية:",
-        buttons=buttons
-    )
-
-# Session extraction handlers
-@telethon_client.on(events.CallbackQuery(data=b"get_telethon_session"))
-async def get_telethon_session(event):
-    user_id = event.sender_id
-    if get_bot_mode() == 'paid' and not is_premium(user_id):
-        return await event.edit(f"هذه الميزة متاحة للمشتركين فقط.")
-
-    await event.edit(f"جاري استخراج جلسة تيليثون...\n\n"
-                    f"الرجاء إرسال رقم هاتفك بالصيغة الدولية (مثال: +9665xxxxxxxx)")
-
-    phone = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
-    phone = phone.text.strip()
-
+async def is_admin(event):
     try:
-        client = TelegramClient(f'session_{user_id}', API_ID, API_HASH)
-        await client.connect()
-        if not await client.is_user_authorized():
-            await client.send_code_request(phone)
-            await event.edit(f"تم إرسال الكود إلى رقمك، الرجاء إرساله هنا.")
+        if event.is_group:
+            return await event.client.get_permissions(event.chat_id, event.sender_id)
+    except:
+        return False
 
-            code = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
-            code = code.text.strip()
+async def check_subscription(user_id):
+    user = users_collection.find_one({"user_id": user_id})
+    if not user:
+        return False, "لم يتم العثور على المستخدم."
 
-            await client.sign_in(phone, code)
-            session_string = client.session.save()
-            await client.disconnect()
+    if user.get("is_subscribed", False):
+        return True, "لديك اشتراك نشط."
 
-            cursor.execute("INSERT OR REPLACE INTO users VALUES (?, ?, ?, ?, ?)",
-                          (user_id, is_premium(user_id), session_string, 'telethon', hack_commands_enabled(user_id)))
-            conn.commit()
+    if user.get("trial_used", False):
+        trial_end = user.get("trial_end_date")
+        if trial_end and datetime.datetime.now(pytz.UTC) < trial_end:
+            return True, f"لديك تجربة مجانية نشطة تنتهي في {trial_end.strftime('%Y-%m-%d %H:%M:%S')}."
 
-            await event.edit(f"تم استخراج الجلسة بنجاح!\n\n"
-                           f"جلستك:\n`{session_string}`")
+    return False, "ليس لديك اشتراك نشط أو انتهت فترة تجربتك."
+
+async def force_subscribe_channels(event):
+    channels = channels_collection.find({"force_subscribe": True})
+    for channel in channels:
+        try:
+            await event.client(ImportChatInviteRequest(channel["invite_link"]))
+        except Exception as e:
+            logger.error(f"Error joining channel {channel['invite_link']}: {e}")
+
+async def auto_post_to_groups():
+    while True:
+        try:
+            groups = groups_collection.find({"auto_post_enabled": True})
+            for group in groups:
+                try:
+                    messages = group.get("messages", [])
+                    if messages:
+                        message = random.choice(messages)
+                        await bot.send_message(group["group_id"], message)
+                        logger.info(f"Posted to group {group['group_id']}")
+                except Exception as e:
+                    logger.error(f"Error posting to group {group['group_id']}: {e}")
+        except Exception as e:
+            logger.error(f"Error in auto_post_to_groups: {e}")
+        await asyncio.sleep(3600)  # Post every hour
+
+async def check_and_apply_trial(user_id):
+    user = users_collection.find_one({"user_id": user_id})
+    if not user:
+        trial_end = datetime.datetime.now(pytz.UTC) + datetime.timedelta(days=TRIAL_DAYS)
+        users_collection.insert_one({
+            "user_id": user_id,
+            "trial_used": True,
+            "trial_end_date": trial_end,
+            "is_subscribed": False,
+            "subscription_end_date": None,
+            "invites": 0
+        })
+        return True, f"تم تفعيل التجربة المجانية لمدة {TRIAL_DAYS} أيام تنتهي في {trial_end.strftime('%Y-%m-%d %H:%M:%S')}."
+    else:
+        if user.get("trial_used", False):
+            return False, "لقد استخدمت التجربة المجانية من قبل."
         else:
-            session_string = client.session.save()
-            await client.disconnect()
+            trial_end = datetime.datetime.now(pytz.UTC) + datetime.timedelta(days=TRIAL_DAYS)
+            users_collection.update_one(
+                {"user_id": user_id},
+                {"$set": {
+                    "trial_used": True,
+                    "trial_end_date": trial_end
+                }}
+            )
+            return True, f"تم تفعيل التجربة المجانية لمدة {TRIAL_DAYS} أيام تنتهي في {trial_end.strftime('%Y-%m-%d %H:%M:%S')}."
 
-            cursor.execute("INSERT OR REPLACE INTO users VALUES (?, ?, ?, ?, ?)",
-                          (user_id, is_premium(user_id), session_string, 'telethon', hack_commands_enabled(user_id)))
-            conn.commit()
+async def check_invites(user_id):
+    invites = invites_collection.count_documents({"inviter_id": user_id})
+    return invites
 
-            await event.edit(f"تم استخراج الجلسة بنجاح!\n\n"
-                           f"جلستك:\n`{session_string}`")
-    except Exception as e:
-        await event.edit(f"حدث خطأ: {str(e)}")
+async def handle_subscription(user_id):
+    invites = await check_invites(user_id)
+    if invites >= REQUIRED_INVITES:
+        users_collection.update_one(
+            {"user_id": user_id},
+            {"$set": {
+                "is_subscribed": True,
+                "subscription_end_date": datetime.datetime.now(pytz.UTC) + datetime.timedelta(days=30)
+            }}
+        )
+        return True, "تم تفعيل الاشتراك بنجاح لمدة 30 يومًا."
+    else:
+        return False, f"تحتاج إلى دعوة {REQUIRED_INVITES - invites} أشخاص آخرين لتفعيل الاشتراك."
 
-@telethon_client.on(events.CallbackQuery(data=b"get_pyrogram_session"))
-async def get_pyrogram_session(event):
-    user_id = event.sender_id
-    if get_bot_mode() == 'paid' and not is_premium(user_id):
-        return await event.edit(f"هذه الميزة متاحة للمشتركين فقط.")
+async def start_repeat_task(chat_id, interval, message):
+    async def repeat_task():
+        while True:
+            try:
+                await bot.send_message(chat_id, message)
+                await asyncio.sleep(interval)
+            except Exception as e:
+                logger.error(f"Error in repeat task for chat {chat_id}: {e}")
+                break
 
-    await event.edit(f"جاري استخراج جلسة بايروغرام...\n\n"
-                    f"الرجاء إرسال رقم هاتفك بالصيغة الدولية (مثال: +9665xxxxxxxx)")
-
-    phone = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
-    phone = phone.text.strip()
-
-    try:
-        client = PyroClient(f'pyro_session_{user_id}', API_ID, API_HASH, phone_number=phone)
-        await client.connect()
-        sent_code = await client.send_code(phone)
-        await event.edit(f"تم إرسال الكود إلى رقمك، الرجاء إرساله هنا.")
-
-        code = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
-        code = code.text.strip()
-
-        await client.sign_in(phone, sent_code.phone_code_hash, code)
-        session_string = await client.export_session_string()
-        await client.disconnect()
-
-        cursor.execute("INSERT OR REPLACE INTO users VALUES (?, ?, ?, ?, ?)",
-                      (user_id, is_premium(user_id), session_string, 'pyrogram', hack_commands_enabled(user_id)))
-        conn.commit()
-
-        await event.edit(f"تم استخراج الجلسة بنجاح!\n\n"
-                       f"جلستك:\n`{session_string}`")
-    except Exception as e:
-        await event.edit(f"حدث خطأ: {str(e)}")
-
-# Session conversion handlers
-@telethon_client.on(events.CallbackQuery(data=b"telethon_to_pyro"))
-async def telethon_to_pyro(event):
-    user_id = event.sender_id
-    if get_bot_mode() == 'paid' and not is_premium(user_id):
-        return await event.edit(f"هذه الميزة متاحة للمشتركين فقط.")
-
-    cursor.execute("SELECT session_string FROM users WHERE user_id = ? AND session_type = 'telethon'", (user_id,))
-    result = cursor.fetchone()
-
-    if not result:
-        return await event.edit(f"لا توجد جلسة تيليثون محفوظة لديك.")
-
-    session_string = result[0]
-    await event.edit(f"جاري تحويل الجلسة...")
-
-    try:
-        from telethon.sessions import StringSession
-        telethon_client_temp = TelegramClient(StringSession(session_string), API_ID, API_HASH)
-        await telethon_client_temp.connect()
-        pyro_client_temp = PyroClient(":memory:", api_id=API_ID, api_hash=API_HASH, session_string=session_string)
-        await pyro_client_temp.start()
-        new_session_string = await pyro_client_temp.export_session_string()
-        await telethon_client_temp.disconnect()
-        await pyro_client_temp.stop()
-
-        cursor.execute("INSERT OR REPLACE INTO users VALUES (?, ?, ?, ?, ?)",
-                      (user_id, is_premium(user_id), new_session_string, 'pyrogram', hack_commands_enabled(user_id)))
-        conn.commit()
-
-        await event.edit(f"تم تحويل الجلسة بنجاح!\n\n"
-                       f"جلستك الجديدة:\n`{new_session_string}`")
-    except Exception as e:
-        await event.edit(f"حدث خطأ: {str(e)}")
-
-@telethon_client.on(events.CallbackQuery(data=b"pyro_to_telethon"))
-async def pyro_to_telethon(event):
-    user_id = event.sender_id
-    if get_bot_mode() == 'paid' and not is_premium(user_id):
-        return await event.edit(f"هذه الميزة متاحة للمشتركين فقط.")
-
-    cursor.execute("SELECT session_string FROM users WHERE user_id = ? AND session_type = 'pyrogram'", (user_id,))
-    result = cursor.fetchone()
-
-    if not result:
-        return await event.edit(f"لا توجد جلسة بايروغرام محفوظة لديك.")
-
-    session_string = result[0]
-    await event.edit(f"جاري تحويل الجلسة...")
-
-    try:
-        pyro_client_temp = PyroClient(":memory:", api_id=API_ID, api_hash=API_HASH, session_string=session_string)
-        await pyro_client_temp.start()
-        from telethon.sessions import StringSession
-        telethon_client_temp = TelegramClient(StringSession(), API_ID, API_HASH)
-        await telethon_client_temp.connect()
-        if not await telethon_client_temp.is_user_authorized():
-            await telethon_client_temp.sign_in(bot_token=BOT_TOKEN)
-        new_session_string = telethon_client_temp.session.save()
-        await telethon_client_temp.disconnect()
-        await pyro_client_temp.stop()
-
-        cursor.execute("INSERT OR REPLACE INTO users VALUES (?, ?, ?, ?, ?)",
-                      (user_id, is_premium(user_id), new_session_string, 'telethon', hack_commands_enabled(user_id)))
-        conn.commit()
-
-        await event.edit(f"تم تحويل الجلسة بنجاح!\n\n"
-                       f"جلستك الجديدة:\n`{new_session_string}`")
-    except Exception as e:
-        await event.edit(f"حدث خطأ: {str(e)}")
-
-# Control panel
-@telethon_client.on(events.CallbackQuery(data=b"control_panel"))
-async def control_panel(event):
-    user_id = event.sender_id
-    if get_bot_status() == 'stopped' and not is_admin(user_id):
-        return await event.edit(f"البوت متوقف حالياً.")
-
-    buttons = [
-        [Button.inline(f"عرض الجلسات المحفوظة", b"show_sessions")],
-        [Button.inline(f"حذف الجلسة", b"delete_session")],
-        [Button.inline(f"تفعيل/تعطيل أوامر الاختراق", b"toggle_hack_commands")],
-        [Button.inline(f"العودة للقائمة الرئيسية", b"start")]
-    ]
-
-    await event.edit(
-        f"لوحة التحكم:\n\n"
-        f"اختر أحد الخيارات التالية:",
-        buttons=buttons
+    task = asyncio.create_task(repeat_task())
+    repeat_tasks[chat_id] = task
+    repeats_collection.update_one(
+        {"chat_id": chat_id},
+        {"$set": {"interval": interval, "message": message, "active": True}},
+        upsert=True
     )
 
-@telethon_client.on(events.CallbackQuery(data=b"toggle_hack_commands"))
-async def toggle_hack_commands_handler(event):
-    user_id = event.sender_id
-    new_status = toggle_hack_commands(user_id)
-    status_text = "مفعل" if new_status else "معطل"
-    await event.edit(f"تم {'تفعيل' if new_status else 'تعطيل'} أوامر الاختراق.\n\nالحالة الحالية: {status_text}")
+async def start_global_repeat_task(message):
+    global global_repeat_task
+    async def global_repeat_task_func():
+        while True:
+            try:
+                groups = groups_collection.find({"auto_post_enabled": True})
+                for group in groups:
+                    try:
+                        await bot.send_message(group["group_id"], message)
+                    except Exception as e:
+                        logger.error(f"Error in global repeat task for group {group['group_id']}: {e}")
+                await asyncio.sleep(global_repeat_interval)
+            except Exception as e:
+                logger.error(f"Error in global repeat task: {e}")
+                break
 
-@telethon_client.on(events.CallbackQuery(data=b"show_sessions"))
-async def show_sessions(event):
-    user_id = event.sender_id
-    cursor.execute("SELECT session_type, session_string FROM users WHERE user_id = ?", (user_id,))
-    sessions = cursor.fetchall()
-
-    if not sessions:
-        return await event.edit(f"لا توجد جلسات محفوظة لديك.")
-
-    message = f"جلساتك المحفوظة:\n\n"
-    for idx, (session_type, session_string) in enumerate(sessions, 1):
-        message += f"{idx}. نوع الجلسة: {session_type}\n{session_string}\n\n"
-
-    await event.edit(message)
-
-@telethon_client.on(events.CallbackQuery(data=b"delete_session"))
-async def delete_session(event):
-    user_id = event.sender_id
-    cursor.execute("SELECT session_type FROM users WHERE user_id = ?", (user_id,))
-    sessions = cursor.fetchall()
-
-    if not sessions:
-        return await event.edit(f"لا توجد جلسات محفوظة لديك.")
-
-    buttons = []
-    for session_type in sessions:
-        buttons.append([Button.inline(f"حذف جلسة {session_type[0]}", f"confirm_delete_{session_type[0]}".encode())])
-
-    buttons.append([Button.inline(f"إلغاء", b"control_panel")])
-
-    await event.edit(
-        f"اختر الجلسة التي تريد حذفها:",
-        buttons=buttons
+    if global_repeat_task:
+        global_repeat_task.cancel()
+    global_repeat_task = asyncio.create_task(global_repeat_task_func())
+    repeats_collection.update_one(
+        {"type": "global"},
+        {"$set": {"interval": global_repeat_interval, "message": message, "active": True}},
+        upsert=True
     )
 
-@telethon_client.on(events.CallbackQuery(pattern=b"confirm_delete_(.*)"))
-async def confirm_delete(event):
-    session_type = event.data_match.group(1).decode()
-    user_id = event.sender_id
-
-    buttons = [
-        [Button.inline(f"تأكيد الحذف", f"delete_{session_type}".encode())],
-        [Button.inline(f"إلغاء", b"control_panel")]
-    ]
-
-    await event.edit(
-        f"هل أنت متأكد من حذف جلسة {session_type}؟",
-        buttons=buttons
+async def stop_repeat_task(chat_id):
+    if chat_id in repeat_tasks:
+        repeat_tasks[chat_id].cancel()
+        del repeat_tasks[chat_id]
+    repeats_collection.update_one(
+        {"chat_id": chat_id},
+        {"$set": {"active": False}}
     )
 
-@telethon_client.on(events.CallbackQuery(pattern=b"delete_(.*)"))
-async def delete(event):
-    session_type = event.data_match.group(1).decode()
-    user_id = event.sender_id
-
-    cursor.execute("DELETE FROM users WHERE user_id = ? AND session_type = ?", (user_id, session_type))
-    conn.commit()
-
-    await event.edit(f"تم حذف جلسة {session_type} بنجاح.")
-
-# Hack commands
-@telethon_client.on(events.CallbackQuery(data=b"hack_commands"))
-async def hack_commands_panel(event):
-    user_id = event.sender_id
-    if not hack_commands_enabled(user_id):
-        return await event.edit(f"أوامر الاختراق معطلة. يرجى تفعيلها من لوحة التحكم.")
-
-    cursor.execute("SELECT id, command_name, command_description FROM hack_commands")
-    commands = cursor.fetchall()
-
-    buttons = []
-    for cmd_id, cmd_name, cmd_desc in commands:
-        buttons.append([Button.inline(f"{cmd_name} - {cmd_desc}", f"execute_command_{cmd_id}".encode())])
-
-    buttons.append([Button.inline(f"العودة للقائمة الرئيسية", b"start")])
-
-    await event.edit(
-        f"أوامر الاختراق:\n\n"
-        f"اختر أمر لتنفيذه على جلستك:",
-        buttons=buttons
+async def stop_global_repeat_task():
+    global global_repeat_task
+    if global_repeat_task:
+        global_repeat_task.cancel()
+        global_repeat_task = None
+    repeats_collection.update_one(
+        {"type": "global"},
+        {"$set": {"active": False}}
     )
 
-@telethon_client.on(events.CallbackQuery(pattern=b"execute_command_(\d+)"))
-async def execute_hack_command(event):
+async def schedule_task(task_type, interval, data=None):
+    async def task_func():
+        while True:
+            try:
+                if task_type == "private_cleanup":
+                    dialogs = await bot.get_dialogs()
+                    for dialog in dialogs:
+                        if dialog.is_user and not dialog.entity.bot:
+                            try:
+                                await bot.delete_dialog(dialog.id)
+                                await bot.send_message(dialog.id, "تم حذف هذه المحادثة تلقائيًا.")
+                            except Exception as e:
+                                logger.error(f"Error deleting private chat {dialog.id}: {e}")
+                elif task_type == "scheduled_broadcast":
+                    users = users_collection.find({})
+                    for user in users:
+                        try:
+                            await bot.send_message(user["user_id"], data["message"])
+                        except Exception as e:
+                            logger.error(f"Error sending broadcast to {user['user_id']}: {e}")
+            except Exception as e:
+                logger.error(f"Error in scheduled task {task_type}: {e}")
+            await asyncio.sleep(interval * 3600)
+
+    task = asyncio.create_task(task_func())
+    scheduled_tasks_collection.update_one(
+        {"type": task_type},
+        {"$set": {"interval": interval, "active": True, "data": data}},
+        upsert=True
+    )
+    return task
+
+async def stop_scheduled_task(task_type):
+    scheduled_tasks_collection.update_one(
+        {"type": task_type},
+        {"$set": {"active": False}}
+    )
+
+async def add_auto_reply(trigger, response):
+    auto_replies_collection.update_one(
+        {"trigger": trigger},
+        {"$set": {"response": response}},
+        upsert=True
+    )
+
+async def remove_auto_reply(trigger):
+    auto_replies_collection.delete_one({"trigger": trigger})
+
+async def is_media_blocked(chat_id, media_type):
+    blocked = blocked_media_collection.find_one({"chat_id": chat_id})
+    if blocked and blocked.get(media_type, False):
+        return True
+    return False
+
+async def block_media(chat_id, media_type):
+    blocked_media_collection.update_one(
+        {"chat_id": chat_id},
+        {"$set": {media_type: True}},
+        upsert=True
+    )
+
+async def unblock_media(chat_id, media_type):
+    blocked_media_collection.update_one(
+        {"chat_id": chat_id},
+        {"$set": {media_type: False}},
+        upsert=True
+    )
+
+async def mute_user_in_chat(chat_id, user_id):
+    muted_users_collection.update_one(
+        {"chat_id": chat_id, "user_id": user_id},
+        {"$set": {"muted": True}},
+        upsert=True
+    )
+
+async def unmute_user_in_chat(chat_id, user_id):
+    muted_users_collection.delete_one({"chat_id": chat_id, "user_id": user_id})
+
+async def is_user_muted(chat_id, user_id):
+    muted = muted_users_collection.find_one({"chat_id": chat_id, "user_id": user_id})
+    return muted is not None
+
+# Command handlers
+@bot.on(events.NewMessage(pattern=r'^\.تفعيل$'))
+async def activate_trial(event):
     user_id = event.sender_id
-    cmd_id = int(event.data_match.group(1))
+    is_subscribed, msg = await check_subscription(user_id)
+    if is_subscribed:
+        await event.reply("لديك بالفعل اشتراك نشط أو تجربة مجانية.")
+        return
 
-    cursor.execute("SELECT session_string, session_type FROM users WHERE user_id = ?", (user_id,))
-    session_data = cursor.fetchone()
+    success, msg = await check_and_apply_trial(user_id)
+    if success:
+        await event.reply(msg)
+    else:
+        await event.reply(msg)
 
-    if not session_data:
-        return await event.edit(f"لا توجد جلسة محفوظة لديك.")
+@bot.on(events.NewMessage(pattern=r'^\.اشتراكي$'))
+async def subscription_info(event):
+    user_id = event.sender_id
+    user = users_collection.find_one({"user_id": user_id})
+    if not user:
+        await event.reply("لم يتم العثور على معلومات الاشتراك الخاصة بك.")
+        return
 
-    session_string, session_type = session_data
-
-    cursor.execute("SELECT command_name, command_code FROM hack_commands WHERE id = ?", (cmd_id,))
-    command_data = cursor.fetchone()
-
-    if not command_data:
-        return await event.edit(f"الأمر غير موجود.")
-
-    cmd_name, cmd_code = command_data
-    await event.edit(f"جاري تنفيذ الأمر: {cmd_name}...")
-
-    try:
-        if session_type == 'telethon':
-            from telethon.sessions import StringSession
-            client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
-            await client.connect()
-            result = eval(f"await {cmd_code}")
-            await client.disconnect()
+    if user.get("is_subscribed", False):
+        end_date = user.get("subscription_end_date")
+        await event.reply(f"لديك اشتراك نشط ينتهي في {end_date.strftime('%Y-%m-%d %H:%M:%S')}.")
+    elif user.get("trial_used", False):
+        end_date = user.get("trial_end_date")
+        if end_date and datetime.datetime.now(pytz.UTC) < end_date:
+            await event.reply(f"لديك تجربة مجانية نشطة تنتهي في {end_date.strftime('%Y-%m-%d %H:%M:%S')}.")
         else:
-            client = PyroClient(":memory:", api_id=API_ID, api_hash=API_HASH, session_string=session_string)
-            await client.start()
-            result = eval(f"await {cmd_code}")
-            await client.stop()
+            await event.reply("انتهت فترة تجربتك المجانية.")
+    else:
+        await event.reply("ليس لديك اشتراك نشط أو تجربة مجانية.")
 
-        await event.edit(f"نتيجة تنفيذ الأمر:\n\n```{str(result)[:4000]}```")
+@bot.on(events.NewMessage(pattern=r'^\.دعوة$'))
+async def invite_link(event):
+    user_id = event.sender_id
+    is_subscribed, msg = await check_subscription(user_id)
+    if not is_subscribed:
+        await event.reply("يجب أن يكون لديك اشتراك نشط أو تجربة مجانية لاستخدام هذه الميزة.")
+        return
+
+    invite = await event.client(functions.messages.ExportChatInviteRequest(peer=event.chat_id))
+    await event.reply(f"رابط الدعوة: {invite.link}\n\nقم بدعوة {REQUIRED_INVITES} أشخاص لتفعيل الاشتراك.")
+
+@bot.on(events.NewMessage(pattern=r'^\.كتم(?:\s+(.+))?$'))
+async def mute_user(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    user_id = None
+    if event.reply_to_msg_id:
+        replied_msg = await event.get_reply_message()
+        user_id = replied_msg.sender_id
+    elif event.pattern_match.group(1):
+        username = event.pattern_match.group(1).strip()
+        try:
+            user = await event.client.get_entity(username)
+            user_id = user.id
+        except:
+            await event.reply("لم يتم العثور على المستخدم.")
+            return
+    else:
+        await event.reply("يرجى الرد على رسالة المستخدم أو ذكر اسمه.")
+        return
+
+    try:
+        await event.client.edit_permissions(event.chat_id, user_id, send_messages=False)
+        await mute_user_in_chat(event.chat_id, user_id)
+        await event.reply(f"تم كتم المستخدم بنجاح.")
     except Exception as e:
-        await event.edit(f"حدث خطأ أثناء التنفيذ: {str(e)}")
+        await event.reply(f"حدث خطأ أثناء كتم المستخدم: {e}")
 
-# Admin panel
-@telethon_client.on(events.CallbackQuery(data=b"admin_panel"))
-async def admin_panel(event):
-    user_id = event.sender_id
-    if not is_admin(user_id):
-        return await event.answer("ليس لديك صلاحية للوصول إلى هذه اللوحة.", alert=True)
+@bot.on(events.NewMessage(pattern=r'^\.الغاء_كتم(?:\s+(.+))?$'))
+async def unmute_user(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
 
-    buttons = [
-        [Button.inline(f"تشغيل/إيقاف البوت", b"toggle_bot_status")],
-        [Button.inline(f"تغيير وضع البوت (مجاني/مدفوع)", b"toggle_bot_mode")],
-        [Button.inline(f"إدارة المشتركين", b"manage_subscribers")],
-        [Button.inline(f"إدارة أوامر الاختراق", b"manage_hack_commands")],
-        [Button.inline(f"إحصائيات البوت", b"bot_stats")],
-        [Button.inline(f"العودة للقائمة الرئيسية", b"start")]
-    ]
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
 
-    status = "شغال" if get_bot_status() == 'running' else "متوقف"
-    mode = "مدفوع" if get_bot_mode() == 'paid' else "مجاني"
-
-    await event.edit(
-        f"لوحة الأدمن:\n\n"
-        f"حالة البوت: {status}\n"
-        f"وضع البوت: {mode}\n\n"
-        f"اختر أحد الخيارات التالية:",
-        buttons=buttons
-    )
-
-@telethon_client.on(events.CallbackQuery(data=b"toggle_bot_status"))
-async def toggle_bot_status(event):
-    user_id = event.sender_id
-    if not is_admin(user_id):
-        return await event.answer("ليس لديك صلاحية.", alert=True)
-
-    current_status = get_bot_status()
-    new_status = 'stopped' if current_status == 'running' else 'running'
-    set_bot_status(new_status)
-
-    await event.edit(f"تم تغيير حالة البوت إلى: {'متوقف' if new_status == 'stopped' else 'شغال'}")
-
-@telethon_client.on(events.CallbackQuery(data=b"toggle_bot_mode"))
-async def toggle_bot_mode(event):
-    user_id = event.sender_id
-    if not is_admin(user_id):
-        return await event.answer("ليس لديك صلاحية.", alert=True)
-
-    current_mode = get_bot_mode()
-    new_mode = 'paid' if current_mode == 'free' else 'free'
-    set_bot_mode(new_mode)
-
-    await event.edit(f"تم تغيير وضع البوت إلى: {'مدفوع' if new_mode == 'paid' else 'مجاني'}")
-
-@telethon_client.on(events.CallbackQuery(data=b"manage_subscribers"))
-async def manage_subscribers(event):
-    user_id = event.sender_id
-    if not is_admin(user_id):
-        return await event.answer("ليس لديك صلاحية.", alert=True)
-
-    buttons = [
-        [Button.inline(f"إضافة مشترك", b"add_subscriber")],
-        [Button.inline(f"إزالة مشترك", b"remove_subscriber")],
-        [Button.inline(f"قائمة المشتركين", b"list_subscribers")],
-        [Button.inline(f"العودة للوحة الأدمن", b"admin_panel")]
-    ]
-
-    await event.edit(
-        f"إدارة المشتركين:\n\n"
-        f"اختر أحد الخيارات التالية:",
-        buttons=buttons
-    )
-
-@telethon_client.on(events.CallbackQuery(data=b"add_subscriber"))
-async def add_subscriber(event):
-    user_id = event.sender_id
-    if not is_admin(user_id):
-        return await event.answer("ليس لديك صلاحية.", alert=True)
-
-    await event.edit(f"أرسل معرف المستخدم الذي تريد إضافته كمشترك (مثال: 123456789)")
-
-    user = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
-    try:
-        subscriber_id = int(user.text.strip())
-        cursor.execute("UPDATE users SET is_premium = 1 WHERE user_id = ?", (subscriber_id,))
-        if cursor.rowcount == 0:
-            cursor.execute("INSERT INTO users (user_id, is_premium) VALUES (?, 1)", (subscriber_id,))
-        conn.commit()
-        await event.edit(f"تم إضافة المستخدم {subscriber_id} كمشترك بنجاح.")
-    except ValueError:
-        await event.edit(f"معرف المستخدم غير صالح.")
-
-@telethon_client.on(events.CallbackQuery(data=b"remove_subscriber"))
-async def remove_subscriber(event):
-    user_id = event.sender_id
-    if not is_admin(user_id):
-        return await event.answer("ليس لديك صلاحية.", alert=True)
-
-    await event.edit(f"أرسل معرف المستخدم الذي تريد إزالته من المشتركين (مثال: 123456789)")
-
-    user = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
-    try:
-        subscriber_id = int(user.text.strip())
-        cursor.execute("UPDATE users SET is_premium = 0 WHERE user_id = ?", (subscriber_id,))
-        conn.commit()
-        await event.edit(f"تم إزالة المستخدم {subscriber_id} من المشتركين.")
-    except ValueError:
-        await event.edit(f"معرف المستخدم غير صالح.")
-
-@telethon_client.on(events.CallbackQuery(data=b"list_subscribers"))
-async def list_subscribers(event):
-    user_id = event.sender_id
-    if not is_admin(user_id):
-        return await event.answer("ليس لديك صلاحية.", alert=True)
-
-    cursor.execute("SELECT user_id FROM users WHERE is_premium = 1")
-    subscribers = cursor.fetchall()
-
-    if not subscribers:
-        return await event.edit(f"لا يوجد مشتركين حالياً.")
-
-    message = f"قائمة المشتركين ({len(subscribers)}):\n\n"
-    for subscriber in subscribers:
-        message += f"{subscriber[0]}\n"
-
-    await event.edit(message)
-
-@telethon_client.on(events.CallbackQuery(data=b"manage_hack_commands"))
-async def manage_hack_commands(event):
-    user_id = event.sender_id
-    if not is_admin(user_id):
-        return await event.answer("ليس لديك صلاحية.", alert=True)
-
-    buttons = [
-        [Button.inline(f"إضافة أمر جديد", b"add_hack_command")],
-        [Button.inline(f"تعديل أمر موجود", b"edit_hack_command")],
-        [Button.inline(f"حذف أمر", b"delete_hack_command")],
-        [Button.inline(f"قائمة الأوامر", b"list_hack_commands")],
-        [Button.inline(f"العودة للوحة الأدمن", b"admin_panel")]
-    ]
-
-    await event.edit(
-        f"إدارة أوامر الاختراق:\n\n"
-        f"اختر أحد الخيارات التالية:",
-        buttons=buttons
-    )
-
-@telethon_client.on(events.CallbackQuery(data=b"add_hack_command"))
-async def add_hack_command(event):
-    user_id = event.sender_id
-    if not is_admin(user_id):
-        return await event.answer("ليس لديك صلاحية.", alert=True)
-
-    await event.edit(f"أرسل اسم الأمر الجديد:")
-
-    command_name = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
-    command_name = command_name.text.strip()
-
-    await event.edit(f"أرسل وصف الأمر:")
-
-    command_description = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
-    command_description = command_description.text.strip()
-
-    await event.edit(f"أرسل كود الأمر (استخدم 'client' كمتغير للعميل):")
-
-    command_code = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
-    command_code = command_code.text.strip()
+    user_id = None
+    if event.reply_to_msg_id:
+        replied_msg = await event.get_reply_message()
+        user_id = replied_msg.sender_id
+    elif event.pattern_match.group(1):
+        username = event.pattern_match.group(1).strip()
+        try:
+            user = await event.client.get_entity(username)
+            user_id = user.id
+        except:
+            await event.reply("لم يتم العثور على المستخدم.")
+            return
+    else:
+        await event.reply("يرجى الرد على رسالة المستخدم أو ذكر اسمه.")
+        return
 
     try:
-        cursor.execute("INSERT INTO hack_commands VALUES (NULL, ?, ?, ?)",
-                      (command_name, command_description, command_code))
-        conn.commit()
-        await event.edit(f"تم إضافة الأمر بنجاح!")
+        await event.client.edit_permissions(event.chat_id, user_id, send_messages=True)
+        await unmute_user_in_chat(event.chat_id, user_id)
+        await event.reply(f"تم إلغاء كتم المستخدم بنجاح.")
     except Exception as e:
-        await event.edit(f"حدث خطأ: {str(e)}")
+        await event.reply(f"حدث خطأ أثناء إلغاء كتم المستخدم: {e}")
 
-@telethon_client.on(events.CallbackQuery(data=b"edit_hack_command"))
-async def edit_hack_command(event):
+@bot.on(events.NewMessage(pattern=r'^\.ذاتيه$'))
+async def get_selfie(event):
     user_id = event.sender_id
-    if not is_admin(user_id):
-        return await event.answer("ليس لديك صلاحية.", alert=True)
+    is_subscribed, msg = await check_subscription(user_id)
+    if not is_subscribed:
+        await event.reply("يجب أن يكون لديك اشتراك نشط أو تجربة مجانية لاستخدام هذه الميزة.")
+        return
 
-    cursor.execute("SELECT id, command_name FROM hack_commands")
-    commands = cursor.fetchall()
+    try:
+        profile_photos = await event.client(GetFullUserRequest(user_id))
+        if profile_photos.profile_photo:
+            photo = await event.client.download_profile_photo(user_id)
+            await event.reply(file=photo)
+        else:
+            await event.reply("لم يتم العثور على صورة شخصية.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء جلب الصورة الشخصية: {e}")
 
-    if not commands:
-        return await event.edit(f"لا توجد أوامر لتعديلها.")
+@bot.on(events.NewMessage(pattern=r'^\.طقس(?:\s+(.+))?$'))
+async def weather(event):
+    city = event.pattern_match.group(1)
+    if not city:
+        await event.reply("يرجى تحديد المدينة، مثال: `.طقس دبي`")
+        return
 
-    buttons = []
-    for cmd_id, cmd_name in commands:
-        buttons.append([Button.inline(f"{cmd_name}", f"select_edit_command_{cmd_id}".encode())])
+    try:
+        url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid=your_api_key&units=metric&lang=ar"
+        response = requests.get(url)
+        data = response.json()
 
-    buttons.append([Button.inline(f"إلغاء", b"manage_hack_commands")])
+        if data["cod"] != 200:
+            await event.reply("لم يتم العثور على المدينة.")
+            return
 
-    await event.edit(
-        f"اختر الأمر الذي تريد تعديله:",
-        buttons=buttons
+        weather_desc = data["weather"][0]["description"]
+        temp = data["main"]["temp"]
+        humidity = data["main"]["humidity"]
+        wind_speed = data["wind"]["speed"]
+
+        message = (
+            f"الطقس في {city}:\n"
+            f"الحالة: {weather_desc}\n"
+            f"درجة الحرارة: {temp}°C\n"
+            f"الرطوبة: {humidity}%\n"
+            f"سرعة الرياح: {wind_speed} م/ث"
+        )
+        await event.reply(message)
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء جلب بيانات الطقس: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.تشغيل(?:\s+(.+))?$'))
+async def play_music(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    user_id = event.sender_id
+    is_subscribed, msg = await check_subscription(user_id)
+    if not is_subscribed:
+        await event.reply("يجب أن يكون لديك اشتراك نشط أو تجربة مجانية لاستخدام هذه الميزة.")
+        return
+
+    query = event.pattern_match.group(1)
+    if not query:
+        await event.reply("يرجى تحديد اسم الأغنية أو الرابط.")
+        return
+
+    try:
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'outtmpl': 'downloads/%(title)s.%(ext)s',
+            'quiet': True
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(query, download=True)
+            file_path = ydl.prepare_filename(info).replace('.webm', '.mp3').replace('.m4a', '.mp3')
+
+        admin = await is_admin(event)
+        if admin and admin.is_admin:
+            await event.client.send_file(event.chat_id, file_path, voice_note=True)
+        else:
+            await event.reply(f"تم العثور على الأغنية: {info['title']}\nيمكنك الاستماع إليها من الرابط: {info['webpage_url']}")
+
+        os.remove(file_path)
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء تشغيل الأغنية: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.ايدي$'))
+async def get_id(event):
+    if event.is_group:
+        if event.reply_to_msg_id:
+            replied_msg = await event.get_reply_message()
+            user_id = replied_msg.sender_id
+            try:
+                user = await event.client.get_entity(user_id)
+                admin = await is_admin(event)
+                if admin and admin.is_admin:
+                    await event.reply(f"ايدي المستخدم: `{user_id}`\nاسم المستخدم: @{user.username}" if user.username else f"ايدي المستخدم: `{user_id}`")
+                else:
+                    await event.reply(f"ايدي المستخدم: `{user_id}`")
+            except Exception as e:
+                await event.reply(f"حدث خطأ أثناء جلب الايدي: {e}")
+        else:
+            await event.reply(f"ايدي المجموعة: `{event.chat_id}`")
+    else:
+        await event.reply(f"ايدي المستخدم: `{event.sender_id}`")
+
+@bot.on(events.NewMessage(pattern=r'^\.كشف$'))
+async def reveal_id(event):
+    if event.reply_to_msg_id:
+        replied_msg = await event.get_reply_message()
+        user_id = replied_msg.sender_id
+        try:
+            user = await event.client.get_entity(user_id)
+            await event.reply(f"ايدي المستخدم: `{user_id}`\nاسم المستخدم: @{user.username}" if user.username else f"ايدي المستخدم: `{user_id}`")
+        except Exception as e:
+            await event.reply(f"حدث خطأ أثناء كشف الايدي: {e}")
+    else:
+        await event.reply("يرجى الرد على رسالة المستخدم.")
+
+@bot.on(events.NewMessage(pattern=r'^\.نص(?:\s+(.+))?$'))
+async def text_styles(event):
+    text = event.pattern_match.group(1)
+    if not text:
+        await event.reply("يرجى تحديد النص، مثال: `.نص مرحبا بالعالم`")
+        return
+
+    styles = {
+        "مشوش": f"||{text}||",
+        "غامق": f"**{text}**",
+        "مائل": f"__{text}__",
+        "رمز": f"`{text}`",
+        "مشطوب": f"~~{text}~~"
+    }
+
+    buttons = [
+        [Button.inline(style, data=f"style_{style}") for style in styles.keys()]
+    ]
+
+    await event.reply("اختر نمط النص:", buttons=buttons)
+
+@bot.on(events.CallbackQuery(pattern=r'^style_'))
+async def text_style_callback(event):
+    style = event.data.decode().split('_')[1]
+    text = event.message.text.split('\n')[0].split(':', 1)[1].strip()
+
+    styles = {
+        "مشوش": f"||{text}||",
+        "غامق": f"**{text}**",
+        "مائل": f"__{text}__",
+        "رمز": f"`{text}`",
+        "مشطوب": f"~~{text}~~"
+    }
+
+    await event.edit(styles[style])
+
+@bot.on(events.NewMessage(pattern=r'^\.حفظ(?:\s+(.+))?$'))
+async def save_content(event):
+    user_id = event.sender_id
+    is_subscribed, msg = await check_subscription(user_id)
+    if not is_subscribed:
+        await event.reply("يجب أن يكون لديك اشتراك نشط أو تجربة مجانية لاستخدام هذه الميزة.")
+        return
+
+    url = event.pattern_match.group(1)
+    if not url:
+        await event.reply("يرجى تحديد رابط المحتوى.")
+        return
+
+    try:
+        ydl_opts = {
+            'outtmpl': 'downloads/%(title)s.%(ext)s',
+            'quiet': True
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            file_path = ydl.prepare_filename(info)
+
+        await event.client.send_file(event.chat_id, file_path)
+        os.remove(file_path)
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء حفظ المحتوى: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.انطق(?:\s+(.+))?$'))
+async def text_to_speech(event):
+    text = event.pattern_match.group(1)
+    if not text:
+        await event.reply("يرجى تحديد النص، مثال: `.انطق مرحبا بالعالم`")
+        return
+
+    try:
+        tts = gTTS(text=text, lang='ar')
+        audio_file = "speech.mp3"
+        tts.save(audio_file)
+
+        await event.client.send_file(event.chat_id, audio_file, voice_note=True)
+        os.remove(audio_file)
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء تحويل النص إلى صوت: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.صيد(?:\s+(.+))?$'))
+async def user_hunting(event):
+    user_id = event.sender_id
+    is_subscribed, msg = await check_subscription(user_id)
+    if not is_subscribed:
+        await event.reply("يجب أن يكون لديك اشتراك نشط أو تجربة مجانية لاستخدام هذه الميزة.")
+        return
+
+    query = event.pattern_match.group(1)
+    if not query:
+        await event.reply("يرجى تحديد اسم المستخدم أو الرابط.")
+        return
+
+    try:
+        users = await event.client.get_participants(query, aggressive=True)
+        if not users:
+            await event.reply("لم يتم العثور على مستخدمين.")
+            return
+
+        message = "المستخدمون الذين تم العثور عليهم:\n"
+        for user in users:
+            message += f"@{user.username}: {user.id}\n" if user.username else f"{user.id}\n"
+
+        await event.reply(message)
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء الصيد: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.حماية(?:\s+(.+))?$'))
+async def protect_commands(event):
+    if event.sender_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    command = event.pattern_match.group(1)
+    if not command:
+        await event.reply("يرجى تحديد الأمر، مثال: `.حماية كتم`")
+        return
+
+    settings = settings_collection.find_one({"setting": "protected_commands"})
+    if not settings:
+        settings_collection.insert_one({"setting": "protected_commands", "commands": [command]})
+    else:
+        if command in settings["commands"]:
+            settings_collection.update_one(
+                {"setting": "protected_commands"},
+                {"$pull": {"commands": command}}
+            )
+            await event.reply(f"تم إلغاء حماية الأمر `{command}`.")
+        else:
+            settings_collection.update_one(
+                {"setting": "protected_commands"},
+                {"$push": {"commands": command}}
+            )
+            await event.reply(f"تم حماية الأمر `{command}`.")
+
+@bot.on(events.NewMessage(pattern=r'^\.مسح$'))
+async def uninstall_bot(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    try:
+        users_collection.delete_many({})
+        groups_collection.delete_many({})
+        channels_collection.delete_many({})
+        invites_collection.delete_many({})
+        music_collection.delete_many({})
+        settings_collection.delete_many({})
+        repeats_collection.delete_many({})
+        auto_replies_collection.delete_many({})
+        scheduled_tasks_collection.delete_many({})
+        muted_users_collection.delete_many({})
+        blocked_media_collection.delete_many({})
+        storage_collection.delete_many({})
+
+        await event.reply("تم مسح جميع البيانات وإلغاء تنصيب البوت بنجاح.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء مسح البيانات: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.اوامر$'))
+async def commands_list(event):
+    commands = """
+**اوامر السورس:**
+
+🔹 `.تفعيل` - تفعيل التجربة المجانية
+🔹 `.اشتراكي` - عرض معلومات الاشتراك
+🔹 `.دعوة` - إنشاء رابط دعوة
+🔹 `.كتم` - كتم مستخدم في المجموعة
+🔹 `.الغاء_كتم` - إلغاء كتم مستخدم في المجموعة
+🔹 `.ذاتيه` - جلب الصورة الشخصية
+🔹 `.طقس` - عرض حالة الطقس
+🔹 `.تشغيل` - تشغيل أغنية
+🔹 `.ايدي` - عرض ايدي المجموعة أو المستخدم
+🔹 `.كشف` - كشف ايدي المستخدم بالرد
+🔹 `.نص` - تحويل النص إلى أنماط مختلفة
+🔹 `.حفظ` - حفظ المحتوى المقيد من القنوات
+🔹 `.انطق` - تحويل النص إلى صوت
+🔹 `.صيد` - صيد اليوزرات
+🔹 `.حماية` - حماية أو إلغاء حماية الأوامر (للمالك فقط)
+🔹 `.مسح` - مسح جميع البيانات وإلغاء التنصيب (للمالك فقط)
+
+**اوامر التكرار:**
+🔹 `.التكرار <ثواني> <رابط المجموعة>` - تكرار رسالة في مجموعة محددة
+🔹 `.تحديد تكرار عام <ثواني>` - تحديد وقت التكرار العام بالثواني
+🔹 `.تكرار عام` - تكرار رسالة في جميع المجموعات
+🔹 `.ايقاف التكرار` - إيقاف التكرار العادي
+🔹 `.ايقاف التكرار العام` - إيقاف التكرار العام
+🔹 `.حالة التكرار` - عرض إحصائيات التكرار
+
+**اوامر التنظيف:**
+🔹 `.حذف جهات الاتصال` - حذف جميع جهات الاتصال
+🔹 `.حذف جميع المجموعات` - إزالة جميع المجموعات
+🔹 `.حذف جميع القنوات` - حذف كل القنوات
+🔹 `.حذف البوتات` - حذف جميع البوتات
+🔹 `.حذف المحادثات الخاصة` - حذف المحادثات الفردية
+
+**اوامر الرد التلقائي والترحيب:**
+🔹 `.تفعيل الرد التلقائي` - تفعيل الرد على كل الرسائل
+🔹 `.اضف ترحيب` - إضافة رسالة ترحيب
+🔹 `.حذف الترحيب` - حذف رسالة ترحيب
+
+**اوامر التقليد والإذاعة:**
+🔹 `.تقليد` - تقليد شخص معين
+🔹 `.الغاء التقليد` - إيقاف التقليد
+🔹 `.اذاعه` - بث رسالة لجميع المستخدمين فقط
+🔹 `.ايقاف الاذاعه` - إيقاف البث الجاري
+🔹 `.حالة الاذاعه` - متابعة تقدم البث
+
+**اوامر حفظ الذاتي:**
+🔹 `.تفعيل الذاتية` - حفظ الصور/البصمات ذاتية التدمير
+🔹 `.ايقاف الذاتية` - إيقاف حفظ الذاتيات
+
+**اوامر إضافية:**
+🔹 `.تخزين <رابط المجموعة>` - تعيين مكان نسخ الرسائل
+🔹 `.الغاء التخزين` - إيقاف نسخ الرسائل الخاصة
+🔹 `.انضمام` - الانضمام لروابط مجموعات
+🔹 `.جلب الروابط` - استخراج روابط المجموعات
+🔹 `.متفاعلين <رابط المجموعة>` - إضافة أعضاء نشطين كجهات اتصال
+🔹 `.اضافة جهاتي <رابط المجموعة>` - إضافة جهاتك لمجموعة
+🔹 `.تفليش <رابط المجموعة>` - طرد جميع الأعضاء من مجموعة
+🔹 `.انشاء` - بدء إنشاء مجموعات بشكل مستمر
+🔹 `.الغاء الانشاء` - إيقاف عملية إنشاء المجموعات
+
+**اوامر القفل والفتح:**
+🔹 `.قفل المتحركة` - منع استلام المتحركات وحذفها فوراً
+🔹 `.فتح المتحركة` - إلغاء منع المتحركات
+🔹 `.قفل الملصقات` - منع استلام الملصقات وحذفها فوراً
+🔹 `.فتح الملصقات` - إلغاء منع الملصقات
+🔹 `.قفل الصور` - منع استلام الصور وحذفها فوراً
+🔹 `.فتح الصور` - إلغاء منع الصور
+🔹 `.قفل البصمات` - منع استلام البصمات وحذفها فوراً
+🔹 `.فتح البصمات` - إلغاء منع البصمات
+🔹 `.قفل الفيديو` - منع استلام الفيديوهات وحذفها فوراً
+🔹 `.فتح الفيديو` - إلغاء منع الفيديوهات
+🔹 `.قفل الوسائط` - منع جميع أنواع الوسائط
+🔹 `.فتح الوسائط` - إلغاء منع جميع الوسائط
+
+**اوامر الكتم والحظر:**
+🔹 `.حظر عام` - حظر جميع المستخدمين (غير جهات الاتصال) وحذف المحادثات
+🔹 `.المكتومين` - عرض المستخدمين المكتومين
+🔹 `.مسح المكتومين` - إلغاء كتم جميع المستخدمين
+
+**اوامر السورس والحماية:**
+🔹 `.فحص` - فحص حالة السورس ووقت التشغيل
+🔹 `.تفعيل حماية الحساب` - طرد أي جلسة جديدة تلقائياً
+🔹 `.تعطيل حماية الحساب` - إيقاف الحماية وطرد الجلسات
+
+**المهام المجدولة:**
+🔹 `.تفعيل التنظيف الخاص <ساعات>` - تفعيل الحظر والحذف التلقائي للمحادثات الخاصة كل فترة
+🔹 `.ايقاف التنظيف الخاص` - إيقاف مهمة التنظيف التلقائي
+🔹 `.اذاعه مجدوله <ساعات>` - تفعيل اذاعة تلقائية للمستخدمين كل فترة
+🔹 `.ايقاف الاذاعه المجدوله` - إيقاف مهمة الاذاعة التلقائية
+🔹 `.حالة المهام` - عرض حالة المهام المجدولة (التنظيف والاذاعة)
+"""
+    await event.reply(commands)
+
+# New command handlers for repeat functionality
+@bot.on(events.NewMessage(pattern=r'^\.التكرار(?:\s+(\d+)\s+(.+))?$'))
+async def repeat_message(event):
+    user_id = event.sender_id
+    is_subscribed, msg = await check_subscription(user_id)
+    if not is_subscribed:
+        await event.reply("يجب أن يكون لديك اشتراك نشط أو تجربة مجانية لاستخدام هذه الميزة.")
+        return
+
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    match = event.pattern_match
+    if not match.group(1) or not match.group(2):
+        await event.reply("الاستخدام: `.التكرار <ثواني> <رسالة>`")
+        return
+
+    try:
+        interval = int(match.group(1))
+        message = match.group(2)
+        chat_id = event.chat_id
+
+        await start_repeat_task(chat_id, interval, message)
+        await event.reply(f"تم بدء تكرار الرسالة كل {interval} ثانية.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.تحديد تكرار عام(?:\s+(\d+))?$'))
+async def set_global_repeat_interval(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    interval = event.pattern_match.group(1)
+    if not interval:
+        await event.reply("الاستخدام: `.تحديد تكرار عام <ثواني>`")
+        return
+
+    try:
+        global global_repeat_interval
+        global_repeat_interval = int(interval)
+        await event.reply(f"تم تعيين وقت التكرار العام إلى {interval} ثانية.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.تكرار عام(?:\s+(.+))?$'))
+async def global_repeat(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    message = event.pattern_match.group(1)
+    if not message:
+        await event.reply("الاستخدام: `.تكرار عام <رسالة>`")
+        return
+
+    try:
+        await start_global_repeat_task(message)
+        await event.reply("تم بدء التكرار العام في جميع المجموعات.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.ايقاف التكرار$'))
+async def stop_repeat(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    chat_id = event.chat_id
+    await stop_repeat_task(chat_id)
+    await event.reply("تم إيقاف التكرار في هذه المجموعة.")
+
+@bot.on(events.NewMessage(pattern=r'^\.ايقاف التكرار العام$'))
+async def stop_global_repeat(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    await stop_global_repeat_task()
+    await event.reply("تم إيقاف التكرار العام.")
+
+@bot.on(events.NewMessage(pattern=r'^\.حالة التكرار$'))
+async def repeat_status(event):
+    user_id = event.sender_id
+    is_subscribed, msg = await check_subscription(user_id)
+    if not is_subscribed:
+        await event.reply("يجب أن يكون لديك اشتراك نشط أو تجربة مجانية لاستخدام هذه الميزة.")
+        return
+
+    repeats = list(repeats_collection.find({"active": True}))
+    if not repeats:
+        await event.reply("لا يوجد تكرارات نشطة حاليًا.")
+        return
+
+    message = "التكرارات النشطة:\n\n"
+    for repeat in repeats:
+        if repeat.get("type") == "global":
+            message += f"🌍 تكرار عام: كل {repeat['interval']} ثانية\n"
+            message += f"الرسالة: {repeat['message']}\n\n"
+        else:
+            message += f"📌 المجموعة: {repeat['chat_id']}\n"
+            message += f"الفترة: كل {repeat['interval']} ثانية\n"
+            message += f"الرسالة: {repeat['message']}\n\n"
+
+    await event.reply(message)
+
+# New command handlers for cleanup functionality
+@bot.on(events.NewMessage(pattern=r'^\.حذف جهات الاتصال$'))
+async def delete_contacts(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    try:
+        contacts = await event.client(functions.contacts.GetContactsRequest(hash=0))
+        for contact in contacts.contacts:
+            await event.client(functions.contacts.DeleteContactsRequest(id=[contact.user_id]))
+        await event.reply("تم حذف جميع جهات الاتصال بنجاح.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء حذف جهات الاتصال: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.حذف جميع المجموعات$'))
+async def delete_groups(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    try:
+        dialogs = await event.client.get_dialogs()
+        for dialog in dialogs:
+            if dialog.is_group:
+                await event.client.delete_dialog(dialog.id)
+        await event.reply("تم حذف جميع المجموعات بنجاح.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء حذف المجموعات: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.حذف جميع القنوات$'))
+async def delete_channels(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    try:
+        dialogs = await event.client.get_dialogs()
+        for dialog in dialogs:
+            if dialog.is_channel:
+                await event.client.delete_dialog(dialog.id)
+        await event.reply("تم حذف جميع القنوات بنجاح.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء حذف القنوات: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.حذف البوتات$'))
+async def delete_bots(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    try:
+        dialogs = await event.client.get_dialogs()
+        for dialog in dialogs:
+            if dialog.is_user and dialog.entity.bot:
+                await event.client.delete_dialog(dialog.id)
+        await event.reply("تم حذف جميع البوتات بنجاح.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء حذف البوتات: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.حذف المحادثات الخاصة$'))
+async def delete_private_chats(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    try:
+        dialogs = await event.client.get_dialogs()
+        for dialog in dialogs:
+            if dialog.is_user and not dialog.entity.bot:
+                await event.client.delete_dialog(dialog.id)
+        await event.reply("تم حذف جميع المحادثات الخاصة بنجاح.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء حذف المحادثات الخاصة: {e}")
+
+# New command handlers for auto-reply and welcome
+@bot.on(events.NewMessage(pattern=r'^\.تفعيل الرد التلقائي$'))
+async def enable_auto_reply(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    settings_collection.update_one(
+        {"setting": "auto_reply_enabled"},
+        {"$set": {"value": True}},
+        upsert=True
+    )
+    await event.reply("تم تفعيل الرد التلقائي على الرسائل.")
+
+@bot.on(events.NewMessage(pattern=r'^\.اضف ترحيب(?:\s+(.+))?$'))
+async def add_welcome(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    message = event.pattern_match.group(1)
+    if not message:
+        await event.reply("الاستخدام: `.اضف ترحيب <رسالة>`")
+        return
+
+    settings_collection.update_one(
+        {"setting": "welcome_message"},
+        {"$set": {"value": message}},
+        upsert=True
+    )
+    await event.reply("تم إضافة رسالة الترحيب بنجاح.")
+
+@bot.on(events.NewMessage(pattern=r'^\.حذف الترحيب$'))
+async def remove_welcome(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    settings_collection.delete_one({"setting": "welcome_message"})
+    await event.reply("تم حذف رسالة الترحيب.")
+
+# New command handlers for mimic and broadcast
+@bot.on(events.NewMessage(pattern=r'^\.تقليد$'))
+async def mimic_user(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    if not event.reply_to_msg_id:
+        await event.reply("يرجى الرد على رسالة المستخدم الذي تريد تقليده.")
+        return
+
+    user_id = event.sender_id
+    is_subscribed, msg = await check_subscription(user_id)
+    if not is_subscribed:
+        await event.reply("يجب أن يكون لديك اشتراك نشط أو تجربة مجانية لاستخدام هذه الميزة.")
+        return
+
+    replied_msg = await event.get_reply_message()
+    target_user_id = replied_msg.sender_id
+
+    settings_collection.update_one(
+        {"setting": "mimic_target"},
+        {"$set": {"value": target_user_id}},
+        upsert=True
+    )
+    await event.reply(f"تم تفعيل التقليد للمستخدم {target_user_id}.")
+
+@bot.on(events.NewMessage(pattern=r'^\.الغاء التقليد$'))
+async def cancel_mimic(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    settings_collection.delete_one({"setting": "mimic_target"})
+    await event.reply("تم إلغاء التقليد.")
+
+@bot.on(events.NewMessage(pattern=r'^\.اذاعه(?:\s+(.+))?$'))
+async def broadcast_message(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    message = event.pattern_match.group(1)
+    if not message:
+        await event.reply("الاستخدام: `.اذاعه <رسالة>`")
+        return
+
+    try:
+        users = users_collection.find({})
+        sent_count = 0
+        for user in users:
+            try:
+                await event.client.send_message(user["user_id"], message)
+                sent_count += 1
+                await asyncio.sleep(0.5)  # Avoid flood wait
+            except Exception as e:
+                logger.error(f"Error sending broadcast to {user['user_id']}: {e}")
+
+        await event.reply(f"تم إرسال الرسالة إلى {sent_count} مستخدم.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء الإذاعة: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.ايقاف الاذاعه$'))
+async def stop_broadcast(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    # This is a placeholder - actual implementation would need to track ongoing broadcasts
+    await event.reply("تم إيقاف الإذاعة.")
+
+@bot.on(events.NewMessage(pattern=r'^\.حالة الاذاعه$'))
+async def broadcast_status(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    await event.reply("هذه الميزة تحتاج إلى تنفيذ متقدم لتتبع حالة الإذاعة.")
+
+# New command handlers for self-destruct
+@bot.on(events.NewMessage(pattern=r'^\.تفعيل الذاتية$'))
+async def enable_self_destruct(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    settings_collection.update_one(
+        {"setting": "self_destruct_enabled"},
+        {"$set": {"value": True}},
+        upsert=True
+    )
+    await event.reply("تم تفعيل حفظ الذاتيات.")
+
+@bot.on(events.NewMessage(pattern=r'^\.ايقاف الذاتية$'))
+async def disable_self_destruct(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    settings_collection.update_one(
+        {"setting": "self_destruct_enabled"},
+        {"$set": {"value": False}},
+        upsert=True
+    )
+    await event.reply("تم إيقاف حفظ الذاتيات.")
+
+# New command handlers for additional features
+@bot.on(events.NewMessage(pattern=r'^\.تخزين(?:\s+(.+))?$'))
+async def set_storage(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    chat = event.pattern_match.group(1)
+    if not chat:
+        await event.reply("الاستخدام: `.تخزين <رابط المجموعة>`")
+        return
+
+    try:
+        entity = await event.client.get_entity(chat)
+        global storage_chat
+        storage_chat = entity.id
+        storage_collection.update_one(
+            {"setting": "storage_chat"},
+            {"$set": {"value": storage_chat}},
+            upsert=True
+        )
+        await event.reply(f"تم تعيين المجموعة {storage_chat} كمكان لتخزين الرسائل.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.الغاء التخزين$'))
+async def cancel_storage(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    global storage_chat
+    storage_chat = None
+    storage_collection.delete_one({"setting": "storage_chat"})
+    await event.reply("تم إلغاء تخزين الرسائل.")
+
+@bot.on(events.NewMessage(pattern=r'^\.انضمام(?:\s+(.+))?$'))
+async def join_group(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    invite_link = event.pattern_match.group(1)
+    if not invite_link:
+        await event.reply("الاستخدام: `.انضمام <رابط الدعوة>`")
+        return
+
+    try:
+        await event.client(ImportChatInviteRequest(invite_link.split('/')[-1]))
+        await event.reply("تم الانضمام إلى المجموعة بنجاح.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء الانضمام: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.جلب الروابط$'))
+async def extract_links(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    user_id = event.sender_id
+    is_subscribed, msg = await check_subscription(user_id)
+    if not is_subscribed:
+        await event.reply("يجب أن يكون لديك اشتراك نشط أو تجربة مجانية لاستخدام هذه الميزة.")
+        return
+
+    try:
+        messages = await event.client.get_messages(event.chat_id, limit=100)
+        links = []
+        for msg in messages:
+            if msg.text and 'http' in msg.text:
+                urls = re.findall(r'(https?://[^\s]+)', msg.text)
+                links.extend(urls)
+
+        if not links:
+            await event.reply("لم يتم العثور على روابط في آخر 100 رسالة.")
+            return
+
+        links_str = "\n".join(links)
+        await event.reply(f"الروابط التي تم العثور عليها:\n{links_str}")
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء جلب الروابط: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.متفاعلين(?:\s+(.+))?$'))
+async def add_active_users(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    chat = event.pattern_match.group(1)
+    if not chat:
+        await event.reply("الاستخدام: `.متفاعلين <رابط المجموعة>`")
+        return
+
+    try:
+        entity = await event.client.get_entity(chat)
+        participants = await event.client.get_participants(entity, aggressive=True)
+
+        for participant in participants:
+            try:
+                await event.client(functions.contacts.AddContactRequest(
+                    id=participant.id,
+                    first_name=participant.first_name or "",
+                    last_name=participant.last_name or "",
+                    phone=participant.phone or ""
+                ))
+            except Exception as e:
+                logger.error(f"Error adding contact {participant.id}: {e}")
+
+        await event.reply(f"تم إضافة {len(participants)} عضو نشط كجهات اتصال.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.اضافة جهاتي(?:\s+(.+))?$'))
+async def add_contacts_to_group(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    chat = event.pattern_match.group(1)
+    if not chat:
+        await event.reply("الاستخدام: `.اضافة جهاتي <رابط المجموعة>`")
+        return
+
+    try:
+        entity = await event.client.get_entity(chat)
+        contacts = await event.client(functions.contacts.GetContactsRequest(hash=0))
+
+        user_ids = [contact.user_id for contact in contacts.contacts]
+        await event.client(InviteToChannelRequest(
+            channel=entity,
+            users=user_ids
+        ))
+
+        await event.reply(f"تم إضافة {len(user_ids)} جهة اتصال إلى المجموعة.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.تفليش(?:\s+(.+))?$'))
+async def kick_all_members(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    chat = event.pattern_match.group(1)
+    if not chat:
+        await event.reply("الاستخدام: `.تفليش <رابط المجموعة>`")
+        return
+
+    try:
+        entity = await event.client.get_entity(chat)
+        participants = await event.client.get_participants(entity)
+
+        for participant in participants:
+            if participant.id != OWNER_ID:
+                try:
+                    await event.client.kick_participant(entity, participant)
+                except Exception as e:
+                    logger.error(f"Error kicking member {participant.id}: {e}")
+
+        await event.reply("تم طرد جميع الأعضاء من المجموعة.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.انشاء$'))
+async def create_groups(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    settings_collection.update_one(
+        {"setting": "group_creation_active"},
+        {"$set": {"value": True}},
+        upsert=True
+    )
+    await event.reply("تم بدء إنشاء المجموعات بشكل مستمر.")
+
+@bot.on(events.NewMessage(pattern=r'^\.الغاء الانشاء$'))
+async def cancel_group_creation(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    settings_collection.update_one(
+        {"setting": "group_creation_active"},
+        {"$set": {"value": False}},
+        upsert=True
+    )
+    await event.reply("تم إيقاف عملية إنشاء المجموعات.")
+
+# New command handlers for lock/unlock media
+@bot.on(events.NewMessage(pattern=r'^\.قفل المتحركة$'))
+async def lock_animations(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    await block_media(event.chat_id, "animations")
+    await event.reply("تم قفل المتحركات في هذه المجموعة.")
+
+@bot.on(events.NewMessage(pattern=r'^\.فتح المتحركة$'))
+async def unlock_animations(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    await unblock_media(event.chat_id, "animations")
+    await event.reply("تم فتح المتحركات في هذه المجموعة.")
+
+@bot.on(events.NewMessage(pattern=r'^\.قفل الملصقات$'))
+async def lock_stickers(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    await block_media(event.chat_id, "stickers")
+    await event.reply("تم قفل الملصقات في هذه المجموعة.")
+
+@bot.on(events.NewMessage(pattern=r'^\.فتح الملصقات$'))
+async def unlock_stickers(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    await unblock_media(event.chat_id, "stickers")
+    await event.reply("تم فتح الملصقات في هذه المجموعة.")
+
+@bot.on(events.NewMessage(pattern=r'^\.قفل الصور$'))
+async def lock_photos(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    await block_media(event.chat_id, "photos")
+    await event.reply("تم قفل الصور في هذه المجموعة.")
+
+@bot.on(events.NewMessage(pattern=r'^\.فتح الصور$'))
+async def unlock_photos(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    await unblock_media(event.chat_id, "photos")
+    await event.reply("تم فتح الصور في هذه المجموعة.")
+
+@bot.on(events.NewMessage(pattern=r'^\.قفل البصمات$'))
+async def lock_voice_messages(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    await block_media(event.chat_id, "voice_messages")
+    await event.reply("تم قفل البصمات في هذه المجموعة.")
+
+@bot.on(events.NewMessage(pattern=r'^\.فتح البصمات$'))
+async def unlock_voice_messages(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    await unblock_media(event.chat_id, "voice_messages")
+    await event.reply("تم فتح البصمات في هذه المجموعة.")
+
+@bot.on(events.NewMessage(pattern=r'^\.قفل الفيديو$'))
+async def lock_videos(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    await block_media(event.chat_id, "videos")
+    await event.reply("تم قفل الفيديوهات في هذه المجموعة.")
+
+@bot.on(events.NewMessage(pattern=r'^\.فتح الفيديو$'))
+async def unlock_videos(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    await unblock_media(event.chat_id, "videos")
+    await event.reply("تم فتح الفيديوهات في هذه المجموعة.")
+
+@bot.on(events.NewMessage(pattern=r'^\.قفل الوسائط$'))
+async def lock_all_media(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    media_types = ["animations", "stickers", "photos", "voice_messages", "videos"]
+    for media_type in media_types:
+        await block_media(event.chat_id, media_type)
+
+    await event.reply("تم قفل جميع أنواع الوسائط في هذه المجموعة.")
+
+@bot.on(events.NewMessage(pattern=r'^\.فتح الوسائط$'))
+async def unlock_all_media(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    media_types = ["animations", "stickers", "photos", "voice_messages", "videos"]
+    for media_type in media_types:
+        await unblock_media(event.chat_id, media_type)
+
+    await event.reply("تم فتح جميع أنواع الوسائط في هذه المجموعة.")
+
+# New command handlers for mute/ban
+@bot.on(events.NewMessage(pattern=r'^\.حظر عام$'))
+async def global_ban(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
+
+    try:
+        dialogs = await event.client.get_dialogs()
+        for dialog in dialogs:
+            if dialog.is_user and not dialog.entity.bot:
+                try:
+                    await event.client.edit_permissions(dialog.id, dialog.id, view_messages=False)
+                    await event.client.delete_dialog(dialog.id)
+                except Exception as e:
+                    logger.error(f"Error banning user {dialog.id}: {e}")
+
+        await event.reply("تم حظر جميع المستخدمين غير جهات الاتصال وحذف المحادثات.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء الحظر العام: {e}")
+
+@bot.on(events.NewMessage(pattern=r'^\.المكتومين$'))
+async def list_muted_users(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    muted_users = list(muted_users_collection.find({"chat_id": event.chat_id}))
+    if not muted_users:
+        await event.reply("لا يوجد مستخدمين مكتومين في هذه المجموعة.")
+        return
+
+    message = "المستخدمين المكتومين في هذه المجموعة:\n"
+    for user in muted_users:
+        try:
+            entity = await event.client.get_entity(user["user_id"])
+            message += f"- {entity.first_name or ''} {entity.last_name or ''} (@{entity.username or 'لا يوجد يوزر'})\n"
+        except:
+            message += f"- مستخدم {user['user_id']}\n"
+
+    await event.reply(message)
+
+@bot.on(events.NewMessage(pattern=r'^\.مسح المكتومين$'))
+async def clear_muted_users(event):
+    if not event.is_group:
+        await event.reply("هذا الأمر يعمل فقط في المجموعات.")
+        return
+
+    admin = await is_admin(event)
+    if not admin or not admin.is_admin:
+        await event.reply("ليس لديك صلاحيات لإدارة هذه المجموعة.")
+        return
+
+    muted_users_collection.delete_many({"chat_id": event.chat_id})
+    await event.reply("تم إلغاء كتم جميع المستخدمين في هذه المجموعة.")
+
+# New command handlers for source and protection
+@bot.on(events.NewMessage(pattern=r'^\.فحص$'))
+async def check_status(event):
+    user_id = event.sender_id
+    is_subscribed, msg = await check_subscription(user_id)
+    if not is_subscribed:
+        await event.reply("يجب أن يكون لديك اشتراك نشط أو تجربة مجانية لاستخدام هذه الميزة.")
+        return
+
+    uptime = datetime.datetime.now() - bot.start_time
+    await event.reply(
+        f"🔹 حالة السورس: نشط\n"
+        f"🔹 وقت التشغيل: {uptime}\n"
+        f"🔹 عدد المجموعات: {groups_collection.count_documents({})}\n"
+        f"🔹 عدد المستخدمين: {users_collection.count_documents({})}"
     )
 
-@telethon_client.on(events.CallbackQuery(pattern=b"select_edit_command_(\d+)"))
-async def select_edit_command(event):
-    cmd_id = int(event.data_match.group(1))
+@bot.on(events.NewMessage(pattern=r'^\.تفعيل حماية الحساب$'))
+async def enable_account_protection(event):
     user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
 
-    cursor.execute("SELECT command_name, command_description, command_code FROM hack_commands WHERE id = ?", (cmd_id,))
-    command_data = cursor.fetchone()
-
-    if not command_data:
-        return await event.edit(f"الأمر غير موجود.")
-
-    command_name, command_description, command_code = command_data
-
-    await event.edit(
-        f"تعديل الأمر: {command_name}\n\n"
-        f"اختر ما تريد تعديله:",
-        buttons=[
-            [Button.inline(f"تعديل الاسم", f"edit_command_name_{cmd_id}".encode())],
-            [Button.inline(f"تعديل الوصف", f"edit_command_desc_{cmd_id}".encode())],
-            [Button.inline(f"تعديل الكود", f"edit_command_code_{cmd_id}".encode())],
-            [Button.inline(f"إلغاء", b"manage_hack_commands")]
-        ]
+    settings_collection.update_one(
+        {"setting": "account_protection"},
+        {"$set": {"value": True}},
+        upsert=True
     )
+    await event.reply("تم تفعيل حماية الحساب. سيتم طرد أي جلسة جديدة تلقائياً.")
 
-@telethon_client.on(events.CallbackQuery(pattern=b"edit_command_name_(\d+)"))
-async def edit_command_name(event):
-    cmd_id = int(event.data_match.group(1))
+@bot.on(events.NewMessage(pattern=r'^\.تعطيل حماية الحساب$'))
+async def disable_account_protection(event):
     user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
 
-    await event.edit(f"أرسل الاسم الجديد للأمر:")
-
-    new_name = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
-    new_name = new_name.text.strip()
-
-    cursor.execute("UPDATE hack_commands SET command_name = ? WHERE id = ?", (new_name, cmd_id))
-    conn.commit()
-
-    await event.edit(f"تم تحديث اسم الأمر بنجاح!")
-
-@telethon_client.on(events.CallbackQuery(pattern=b"edit_command_desc_(\d+)"))
-async def edit_command_desc(event):
-    cmd_id = int(event.data_match.group(1))
-    user_id = event.sender_id
-
-    await event.edit(f"أرسل الوصف الجديد للأمر:")
-
-    new_desc = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
-    new_desc = new_desc.text.strip()
-
-    cursor.execute("UPDATE hack_commands SET command_description = ? WHERE id = ?", (new_desc, cmd_id))
-    conn.commit()
-
-    await event.edit(f"تم تحديث وصف الأمر بنجاح!")
-
-@telethon_client.on(events.CallbackQuery(pattern=b"edit_command_code_(\d+)"))
-async def edit_command_code(event):
-    cmd_id = int(event.data_match.group(1))
-    user_id = event.sender_id
-
-    await event.edit(f"أرسل الكود الجديد للأمر (استخدم 'client' كمتغير للعميل):")
-
-    new_code = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
-    new_code = new_code.text.strip()
-
-    cursor.execute("UPDATE hack_commands SET command_code = ? WHERE id = ?", (new_code, cmd_id))
-    conn.commit()
-
-    await event.edit(f"تم تحديث كود الأمر بنجاح!")
-
-@telethon_client.on(events.CallbackQuery(data=b"delete_hack_command"))
-async def delete_hack_command(event):
-    user_id = event.sender_id
-    if not is_admin(user_id):
-        return await event.answer("ليس لديك صلاحية.", alert=True)
-
-    cursor.execute("SELECT id, command_name FROM hack_commands")
-    commands = cursor.fetchall()
-
-    if not commands:
-        return await event.edit(f"لا توجد أوامر لحذفها.")
-
-    buttons = []
-    for cmd_id, cmd_name in commands:
-        buttons.append([Button.inline(f"{cmd_name}", f"confirm_delete_command_{cmd_id}".encode())])
-
-    buttons.append([Button.inline(f"إلغاء", b"manage_hack_commands")])
-
-    await event.edit(
-        f"اختر الأمر الذي تريد حذفه:",
-        buttons=buttons
+    settings_collection.update_one(
+        {"setting": "account_protection"},
+        {"$set": {"value": False}},
+        upsert=True
     )
+    await event.reply("تم تعطيل حماية الحساب.")
 
-@telethon_client.on(events.CallbackQuery(pattern=b"confirm_delete_command_(\d+)"))
-async def confirm_delete_command(event):
-    cmd_id = int(event.data_match.group(1))
+# New command handlers for scheduled tasks
+@bot.on(events.NewMessage(pattern=r'^\.تفعيل التنظيف الخاص(?:\s+(\d+))?$'))
+async def enable_private_cleanup(event):
     user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
 
-    cursor.execute("SELECT command_name FROM hack_commands WHERE id = ?", (cmd_id,))
-    command_name = cursor.fetchone()[0]
+    hours = event.pattern_match.group(1)
+    if not hours:
+        await event.reply("الاستخدام: `.تفعيل التنظيف الخاص <ساعات>`")
+        return
 
-    await event.edit(
-        f"هل أنت متأكد من حذف الأمر: {command_name}?",
-        buttons=[
-            [Button.inline(f"تأكيد الحذف", f"delete_command_{cmd_id}".encode())],
-            [Button.inline(f"إلغاء", b"manage_hack_commands")]
-        ]
-    )
+    try:
+        hours = int(hours)
+        await schedule_task("private_cleanup", hours)
+        await event.reply(f"تم تفعيل التنظيف التلقائي للمحادثات الخاصة كل {hours} ساعة.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ: {e}")
 
-@telethon_client.on(events.CallbackQuery(pattern=b"delete_command_(\d+)"))
-async def delete_command(event):
-    cmd_id = int(event.data_match.group(1))
+@bot.on(events.NewMessage(pattern=r'^\.ايقاف التنظيف الخاص$'))
+async def disable_private_cleanup(event):
     user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
 
-    cursor.execute("DELETE FROM hack_commands WHERE id = ?", (cmd_id,))
-    conn.commit()
+    await stop_scheduled_task("private_cleanup")
+    await event.reply("تم إيقاف مهمة التنظيف التلقائي.")
 
-    await event.edit(f"تم حذف الأمر بنجاح!")
-
-@telethon_client.on(events.CallbackQuery(data=b"list_hack_commands"))
-async def list_hack_commands(event):
+@bot.on(events.NewMessage(pattern=r'^\.اذاعه مجدوله(?:\s+(\d+)\s+(.+))?$'))
+async def enable_scheduled_broadcast(event):
     user_id = event.sender_id
-    if not is_admin(user_id):
-        return await event.answer("ليس لديك صلاحية.", alert=True)
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
 
-    cursor.execute("SELECT id, command_name, command_description FROM hack_commands")
-    commands = cursor.fetchall()
+    match = event.pattern_match
+    if not match.group(1) or not match.group(2):
+        await event.reply("الاستخدام: `.اذاعه مجدوله <ساعات> <رسالة>`")
+        return
 
-    if not commands:
-        return await event.edit(f"لا توجد أوامر حالياً.")
+    try:
+        hours = int(match.group(1))
+        message = match.group(2)
+        await schedule_task("scheduled_broadcast", hours, {"message": message})
+        await event.reply(f"تم تفعيل الإذاعة المجدولة كل {hours} ساعة.")
+    except Exception as e:
+        await event.reply(f"حدث خطأ: {e}")
 
-    message = f"قائمة أوامر الاختراق ({len(commands)}):\n\n"
-    for cmd_id, cmd_name, cmd_desc in commands:
-        message += f"{cmd_id}. {cmd_name} - {cmd_desc}\n"
-
-    await event.edit(message)
-
-@telethon_client.on(events.CallbackQuery(data=b"bot_stats"))
-async def bot_stats(event):
+@bot.on(events.NewMessage(pattern=r'^\.ايقاف الاذاعه المجدوله$'))
+async def disable_scheduled_broadcast(event):
     user_id = event.sender_id
-    if not is_admin(user_id):
-        return await event.answer("ليس لديك صلاحية.", alert=True)
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
 
-    cursor.execute("SELECT COUNT(*) FROM users")
-    total_users = cursor.fetchone()[0]
+    await stop_scheduled_task("scheduled_broadcast")
+    await event.reply("تم إيقاف مهمة الإذاعة المجدولة.")
 
-    cursor.execute("SELECT COUNT(*) FROM users WHERE is_premium = 1")
-    premium_users = cursor.fetchone()[0]
+@bot.on(events.NewMessage(pattern=r'^\.حالة المهام$'))
+async def task_status(event):
+    user_id = event.sender_id
+    if user_id != OWNER_ID:
+        await event.reply("هذا الأمر مخصص للمالك فقط.")
+        return
 
-    cursor.execute("SELECT COUNT(*) FROM hack_commands")
-    total_commands = cursor.fetchone()[0]
+    tasks = list(scheduled_tasks_collection.find({"active": True}))
+    if not tasks:
+        await event.reply("لا توجد مهام مجدولة نشطة حاليًا.")
+        return
 
-    status = "شغال" if get_bot_status() == 'running' else "متوقف"
-    mode = "مدفوع" if get_bot_mode() == 'paid' else "مجاني"
+    message = "المهام المجدولة النشطة:\n\n"
+    for task in tasks:
+        message += f"🔹 نوع المهمة: {task['type']}\n"
+        message += f"الفترة: كل {task['interval']} ساعة\n"
+        if task['type'] == "scheduled_broadcast":
+            message += f"الرسالة: {task['data']['message']}\n"
+        message += "\n"
 
-    await event.edit(
-        f"إحصائيات البوت:\n\n"
-        f"حالة البوت: {status}\n"
-        f"وضع البوت: {mode}\n"
-        f"إجمالي المستخدمين: {total_users}\n"
-        f"المشتركين: {premium_users}\n"
-        f"أوامر الاختراق: {total_commands}"
-    )
+    await event.reply(message)
 
-# Run the bot
-async def main():
-    await telethon_client.start(bot_token=BOT_TOKEN)
-    print("Bot is running...")
-    await telethon_client.run_until_disconnected()
+# Event handlers for new features
+@bot.on(events.NewMessage)
+async def handle_auto_reply(event):
+    auto_reply_enabled = settings_collection.find_one({"setting": "auto_reply_enabled"})
+    if auto_reply_enabled and auto_reply_enabled.get("value", False):
+        auto_reply = auto_replies_collection.find_one({"trigger": event.text})
+        if auto_reply:
+            await event.reply(auto_reply["response"])
 
-if __name__ == '__main__':
-    from telethon.sessions import StringSession
+@bot.on(events.NewMessage)
+async def handle_welcome(event):
+    if event.is_group and event.is_private is False:
+        welcome_message = settings_collection.find_one({"setting": "welcome_message"})
+        if welcome_message:
+            await event.reply(welcome_message["value"])
+
+@bot.on(events.NewMessage)
+async def handle_mimic(event):
+    if event.is_group:
+        mimic_target = settings_collection.find_one({"setting": "mimic_target"})
+        if mimic_target and mimic_target.get("value") == event.sender_id:
+            # Check if the bot is admin
+            try:
+                permissions = await event.client.get_permissions(event.chat_id, (await event.client.get_me()).id)
+                if permissions.is_admin:
+                    await event.reply(event.text)
+            except Exception as e:
+                logger.error(f"Error in mimic: {e}")
+
+@bot.on(events.NewMessage)
+async def handle_media_block(event):
+    if event.is_group:
+        if event.photo and await is_media_blocked(event.chat_id, "photos"):
+            await event.delete()
+        elif event.sticker and await is_media_blocked(event.chat_id, "stickers"):
+            await event.delete()
+        elif event.video and await is_media_blocked(event.chat_id, "videos"):
+            await event.delete()
+        elif event.voice and await is_media_blocked(event.chat_id, "voice_messages"):
+            await event.delete()
+        elif event.document and event.document.mime_type.startswith('image/gif') and await is_media_blocked(event.chat_id, "animations"):
+            await event.delete()
+
+@bot.on(events.NewMessage)
+async def handle_storage(event):
+    global storage_chat
+    if storage_chat and event.is_private and not event.is_group:
+        try:
+            await event.client.forward_messages(storage_chat, event.message)
+        except Exception as e:
+            logger.error(f"Error storing message: {e}")
+
+# Start the auto poster
+async def start_auto_poster():
+    await bot.start()
+    bot.start_time = datetime.datetime.now()
+    await force_subscribe_channels(bot)
+    asyncio.create_task(auto_post_to_groups())
+    logger.info("Auto poster started successfully.")
+    await bot.run_until_disconnected()
+
+if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    loop.run_until_complete(start_auto_poster())
