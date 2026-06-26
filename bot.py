@@ -88,7 +88,7 @@ user_clients = {}
 STEALTH_MODES = {
     'fast': {'group_delay': [2, 5], 'name': 'سريع'},
     'balanced': {'group_delay': [5, 10], 'name': 'متوازن'},
-    'safe': {'group_delay': [10, 20], ID_CARD'name': 'آمن جدا'}
+    'safe': {'group_delay': [10, 20], 'name': 'آمن جدا'}
 }
 
 def load_db():
