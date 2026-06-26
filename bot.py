@@ -1,3 +1,4 @@
+#@shmrye
 import asyncio
 import random
 import logging
@@ -10,17 +11,22 @@ import os
 import re
 from typing import List, Dict, Optional
 
+# Premium Emojis
+PREMIUM_EMOJIS = [
+    "💻", "🎲", "🌿", "👤", "🪐", "🔅", "⚡️", "🎸", "🕊", "⚪️", "🦋", "✨"
+]
+
 # Configuration
 API_ID = 20867472
 API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
 BOT_TOKEN = "8914045842:AAEz6MNsGTShwob_M3H0ECy8eOkl2nT5gno"
 ADMIN_ID = 932862531
-DEVELOPER_ID = 932862531  # Replace with developer ID if different
+ADMIN_USERNAME = 'Programmer_error'  # Replace with your admin username
 DB_NAME = 'auto_poster.db'
 
 # Initialize logging
 logging.basicConfig(
-    format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s',
+    format='<b>[%(levelname) 5s/%(asctime)s]</b> <b>%(name)s:</b> <b>%(message)s</b>',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -34,13 +40,13 @@ def init_db():
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
-        session TEXT,
         username TEXT,
         first_name TEXT,
         last_name TEXT,
         is_vip BOOLEAN DEFAULT FALSE,
         vip_expiry DATETIME,
         is_banned BOOLEAN DEFAULT FALSE,
+        activation_code TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     ''')
@@ -70,6 +76,17 @@ def init_db():
     )
     ''')
 
+    # Activation codes table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS activation_codes (
+        code TEXT PRIMARY KEY,
+        is_used BOOLEAN DEFAULT FALSE,
+        used_by INTEGER,
+        used_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+
     # Messages table
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS messages (
@@ -78,37 +95,6 @@ def init_db():
         font TEXT,
         is_premium BOOLEAN DEFAULT FALSE,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
-
-    # Posting settings
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS posting_settings (
-        id INTEGER PRIMARY KEY,
-        min_delay INTEGER DEFAULT 300,
-        max_delay INTEGER DEFAULT 500,
-        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
-
-    # Auto reply settings
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS auto_reply (
-        id INTEGER PRIMARY KEY,
-        enabled BOOLEAN DEFAULT FALSE,
-        mention_reply TEXT,
-        reply_reply TEXT,
-        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
-
-    # Welcome message settings
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS welcome_settings (
-        id INTEGER PRIMARY KEY,
-        enabled BOOLEAN DEFAULT FALSE,
-        message TEXT,
-        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     ''')
 
@@ -121,19 +107,6 @@ def init_db():
         cooldown_until DATETIME
     )
     ''')
-
-    # Initialize default settings if not exists
-    cursor.execute('SELECT COUNT(*) FROM posting_settings')
-    if cursor.fetchone()[0] == 0:
-        cursor.execute('INSERT INTO posting_settings (min_delay, max_delay) VALUES (300, 500)')
-
-    cursor.execute('SELECT COUNT(*) FROM auto_reply')
-    if cursor.fetchone()[0] == 0:
-        cursor.execute('INSERT INTO auto_reply (enabled, mention_reply, reply_reply) VALUES (0, "نعم، كيف يمكنني مساعدتك؟", "شكرا لتواصلك معي!")')
-
-    cursor.execute('SELECT COUNT(*) FROM welcome_settings')
-    if cursor.fetchone()[0] == 0:
-        cursor.execute('INSERT INTO welcome_settings (enabled, message) VALUES (0, "مرحبا بك في البوت!")')
 
     conn.commit()
     conn.close()
@@ -149,22 +122,31 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def add_premium_emojis(text: str) -> str:
+    emoji = random.choice(PREMIUM_EMOJIS)
+    return f"<b>{emoji} {text} {emoji}</b>"
+
 def format_text_with_font(text: str, font: str = None) -> str:
     if not font:
-        return text
+        fonts = [
+            "monospace", "sans-serif", "serif", "small", "large",
+            "𝗠𝗢𝗡𝗢𝗦𝗣𝗔𝗖𝗘", "𝖬𝖮𝖭𝖮𝖲𝖯𝖠𝖢𝖤", "𝕄𝕆ℕ𝕆𝕊ℙ𝔸ℂ𝔼",
+            "𝓜𝓞𝓝𝓞𝓢𝓟𝓐𝓒𝓔", "𝒎𝒐𝒏𝒐𝒔𝒑𝒂𝒄𝒆", "𝐌𝐎𝐍𝐎𝐒𝐏𝐀𝐂𝐄"
+        ]
+        font = random.choice(fonts)
 
     if font.lower() == "monospace":
-        return f"```{text}```"
+        return f"<code>{text}</code>"
     elif font.lower() == "sans-serif":
-        return f"𝗧𝗘𝗫𝗧: {text}"
+        return f"<b>𝗧𝗘𝗫𝗧: {text}</b>"
     elif font.lower() == "serif":
-        return f"𝖳𝖤𝖸𝖳: {text}"
+        return f"<b>𝖳𝖤𝖸𝖳: {text}</b>"
     elif font == "small":
         return f"<small>{text}</small>"
     elif font == "large":
         return f"<large>{text}</large>"
     else:
-        return text
+        return f"<b>{text}</b>"
 
 async def check_group_status(group_id: int) -> bool:
     conn = get_db_connection()
@@ -191,14 +173,6 @@ async def check_group_status(group_id: int) -> bool:
         return False
 
 async def get_random_delay() -> int:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT min_delay, max_delay FROM posting_settings WHERE id = 1')
-    result = cursor.fetchone()
-    conn.close()
-
-    if result:
-        return random.randint(result['min_delay'], result['max_delay'])
     return random.randint(300, 500)
 
 async def check_flood_protection(group_id: int) -> bool:
@@ -267,10 +241,18 @@ async def get_active_groups() -> List[int]:
     conn.close()
     return groups
 
-async def get_all_messages() -> List[str]:
+async def get_premium_messages() -> List[str]:
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT text FROM messages')
+    cursor.execute('SELECT text FROM messages WHERE is_premium = 1')
+    messages = [row['text'] for row in cursor.fetchall()]
+    conn.close()
+    return messages
+
+async def get_regular_messages() -> List[str]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT text FROM messages WHERE is_premium = 0')
     messages = [row['text'] for row in cursor.fetchall()]
     conn.close()
     return messages
@@ -362,6 +344,56 @@ async def generate_vip_code(duration_days: int) -> str:
     finally:
         conn.close()
 
+async def generate_activation_code() -> str:
+    import secrets
+    code = secrets.token_hex(6).upper()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+        INSERT INTO activation_codes (code)
+        VALUES (?)
+        ''', (code,))
+        conn.commit()
+        return code
+    except Exception as e:
+        logger.error(f"Error generating activation code: {e}")
+        return None
+    finally:
+        conn.close()
+
+async def redeem_activation_code(user_id: int, code: str) -> bool:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('SELECT * FROM activation_codes WHERE code = ? AND is_used = 0', (code,))
+        activation_code = cursor.fetchone()
+
+        if not activation_code:
+            return False
+
+        cursor.execute('''
+        UPDATE users
+        SET activation_code = ?
+        WHERE user_id = ?
+        ''', (code, user_id))
+
+        cursor.execute('''
+        UPDATE activation_codes
+        SET is_used = 1, used_by = ?, used_at = ?
+        WHERE code = ?
+        ''', (user_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), code))
+
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Error redeeming activation code: {e}")
+        return False
+    finally:
+        conn.close()
+
 async def redeem_vip_code(user_id: int, code: str) -> bool:
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -427,156 +459,35 @@ async def is_user_vip(user_id: int) -> bool:
     finally:
         conn.close()
 
-async def get_user_session(user_id: int) -> Optional[str]:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT session FROM users WHERE user_id = ?', (user_id,))
-    result = cursor.fetchone()
-    conn.close()
-    return result['session'] if result else None
-
-async def save_user_session(user_id: int, session: str) -> bool:
+async def is_user_activated(user_id: int) -> bool:
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
         cursor.execute('''
-        UPDATE users
-        SET session = ?
-        WHERE user_id = ?
-        ''', (session, user_id))
-        conn.commit()
+        SELECT activation_code FROM users WHERE user_id = ?
+        ''', (user_id,))
+        result = cursor.fetchone()
+
+        if not result or not result['activation_code']:
+            return False
+
         return True
     except Exception as e:
-        logger.error(f"Error saving session: {e}")
+        logger.error(f"Error checking activation status: {e}")
         return False
     finally:
         conn.close()
-
-async def get_posting_settings() -> Dict:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT min_delay, max_delay FROM posting_settings WHERE id = 1')
-    result = cursor.fetchone()
-    conn.close()
-    return {'min_delay': result['min_delay'], 'max_delay': result['max_delay']} if result else {'min_delay': 300, 'max_delay': 500}
-
-async def update_posting_settings(min_delay: int, max_delay: int) -> bool:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    try:
-        cursor.execute('''
-        UPDATE posting_settings
-        SET min_delay = ?, max_delay = ?, last_updated = ?
-        WHERE id = 1
-        ''', (min_delay, max_delay, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-        conn.commit()
-        return True
-    except Exception as e:
-        logger.error(f"Error updating posting settings: {e}")
-        return False
-    finally:
-        conn.close()
-
-async def get_auto_reply_settings() -> Dict:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT enabled, mention_reply, reply_reply FROM auto_reply WHERE id = 1')
-    result = cursor.fetchone()
-    conn.close()
-    return {
-        'enabled': result['enabled'],
-        'mention_reply': result['mention_reply'],
-        'reply_reply': result['reply_reply']
-    } if result else {
-        'enabled': False,
-        'mention_reply': '',
-        'reply_reply': ''
-    }
-
-async def update_auto_reply_settings(enabled: bool, mention_reply: str, reply_reply: str) -> bool:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    try:
-        cursor.execute('''
-        UPDATE auto_reply
-        SET enabled = ?, mention_reply = ?, reply_reply = ?, last_updated = ?
-        WHERE id = 1
-        ''', (enabled, mention_reply, reply_reply, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-        conn.commit()
-        return True
-    except Exception as e:
-        logger.error(f"Error updating auto reply settings: {e}")
-        return False
-    finally:
-        conn.close()
-
-async def get_welcome_settings() -> Dict:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT enabled, message FROM welcome_settings WHERE id = 1')
-    result = cursor.fetchone()
-    conn.close()
-    return {
-        'enabled': result['enabled'],
-        'message': result['message']
-    } if result else {
-        'enabled': False,
-        'message': ''
-    }
-
-async def update_welcome_settings(enabled: bool, message: str) -> bool:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    try:
-        cursor.execute('''
-        UPDATE welcome_settings
-        SET enabled = ?, message = ?, last_updated = ?
-        WHERE id = 1
-        ''', (enabled, message, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-        conn.commit()
-        return True
-    except Exception as e:
-        logger.error(f"Error updating welcome settings: {e}")
-        return False
-    finally:
-        conn.close()
-
-async def get_all_user_groups(user_id: int) -> List[Dict]:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-    SELECT group_id, group_name, group_username, is_active, is_banned
-    FROM groups
-    WHERE group_id IN (
-        SELECT group_id FROM group_members WHERE user_id = ?
-    )
-    ''', (user_id,))
-    groups = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return groups
-
-async def fetch_user_groups(user_id: int) -> bool:
-    try:
-        async for dialog in client.iter_dialogs():
-            if dialog.is_group or dialog.is_channel:
-                await add_group(dialog.id, dialog.name, dialog.entity.username)
-        return True
-    except Exception as e:
-        logger.error(f"Error fetching groups: {e}")
-        return False
 
 # Auto poster main function
 async def auto_poster():
     while True:
         try:
             groups = await get_active_groups()
-            messages = await get_all_messages()
+            premium_messages = await get_premium_messages()
+            regular_messages = await get_regular_messages()
 
-            if not groups or not messages:
+            if not groups or (not premium_messages and not regular_messages):
                 await asyncio.sleep(60)
                 continue
 
@@ -589,11 +500,16 @@ async def auto_poster():
                     if not await check_flood_protection(group_id):
                         continue
 
-                    message = random.choice(messages)
+                    messages_to_send = premium_messages if random.random() < 0.3 else regular_messages
+                    if not messages_to_send:
+                        messages_to_send = premium_messages if premium_messages else regular_messages
+
+                    message = random.choice(messages_to_send)
+                    formatted_message = add_premium_emojis(message) if random.random() < 0.7 else f"<b>{message}</b>"
 
                     try:
-                        await client.send_message(group_id, message)
-                        logger.info(f"Posted to group {group_id}: {message[:50]}...")
+                        await client.send_message(group_id, formatted_message, parse_mode='html')
+                        logger.info(f"Posted to group {group_id}: {formatted_message[:50]}...")
                     except Exception as e:
                         logger.error(f"Error posting to group {group_id}: {e}")
                         if "CHAT_WRITE_FORBIDDEN" in str(e) or "CHAT_ADMIN_REQUIRED" in str(e):
@@ -609,275 +525,140 @@ async def auto_poster():
             logger.error(f"Error in auto_poster main loop: {e}")
             await asyncio.sleep(60)
 
-# Main control panel
-@client.on(events.NewMessage(pattern='/start'))
-async def main_panel(event):
-    user_id = event.sender_id
+# Admin panel
+@client.on(events.NewMessage(pattern='/start', from_users=lambda u: u.username == ADMIN_USERNAME))
+async def admin_activation(event):
+    await event.respond(
+        "<b>🔑 مرحبا بك في بوت النشر المتطور!</b>\n\n"
+        "<b>يرجى إرسال كود التفعيل للدخول إلى لوحة التحكم:</b>"
+    )
 
-    # Check if user has a session
-    session = await get_user_session(user_id)
-    if not session:
-        await event.respond(
-            "مرحبا بك في بوت النشر المتطور\n\n"
-            "يرجى ارسال جلسة السيشن الخاصة بك لتسجيل الدخول",
-            buttons=[
-                [Button.inline("ارسال جلسة السيشن", b'send_session')],
-                [Button.url("مراسلة المبرمج", f"tg://user?id={DEVELOPER_ID}")]
-            ]
-        )
-        return
-    # Register user if not exists
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-    INSERT INTO users (user_id, username, first_name, last_name, session)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET
-    username = excluded.username,
-    first_name = excluded.first_name,
-    last_name = excluded.last_name,
-    session = excluded.session
-    ''', (
-        user_id,
-        event.sender.username,
-        event.sender.first_name,
-        event.sender.last_name,
-        session
-    ))
-    conn.commit()
-    conn.close()
+    @client.on(events.NewMessage(from_users=lambda u: u.username == ADMIN_USERNAME))
+    async def handle_activation_code(new_event):
+        code = new_event.text.strip()
+        if code == "ADMIN123":  # Replace with your actual admin activation code
+            await admin_panel(new_event)
+        else:
+            await new_event.reply("<b>❌ كود التفعيل غير صحيح!</b>")
+        client.remove_event_handler(handle_activation_code)
 
-    is_vip = await is_user_vip(user_id)
-
+async def admin_panel(event):
     buttons = [
-        [Button.inline("التحكم بالنشر", b'posting_control')],
-        [Button.inline("ادارة الجروبات", b'group_management')],
-        [Button.inline("ادارة الرسائل", b'message_management')],
-        [Button.inline("الرد التلقائي", b'auto_reply_control')],
-        [Button.inline("الترحيب بالخاص", b'welcome_control')]
+        [Button.inline("<b>📊 الإحصائيات</b>", b'stats')],
+        [Button.inline("<b>👥 إدارة المجموعات</b>", b'manage_groups')],
+        [Button.inline("<b>💬 إدارة الرسائل</b>", b'manage_messages')],
+        [Button.inline("<b>👑 إدارة VIP</b>", b'manage_vip')],
+        [Button.inline("<b>🎟 إدارة أكواد التفعيل</b>", b'manage_activation_codes')],
+        [Button.inline("<b>📢 الإذاعة</b>", b'broadcast')],
+        [Button.inline("<b>🔧 إعدادات البوت</b>", b'bot_settings')],
+        [Button.inline("<b>🛠 أدوات المطور</b>", b'developer_tools')]
     ]
-
-    if is_vip:
-        buttons.append([Button.inline("تفعيل كود VIP", b'activate_vip')])
-
-    buttons.append([Button.url("مراسلة المبرمج", f"tg://user?id={DEVELOPER_ID}")])
 
     await event.respond(
-        "مرحبا بك في لوحة التحكم الرئيسية\n\n"
-        "يمكنك التحكم الكامل في البوت من هنا",
-        buttons=buttons
+        "<b>🎛 لوحة التحكم الإدارية</b>\n\n"
+        "<b>مرحبًا بك في لوحة التحكم الإدارية للبوت المتطور للنشر التلقائي.</b>",
+        buttons=buttons,
+        parse_mode='html'
     )
 
-@client.on(events.CallbackQuery(data=b'send_session'))
-async def send_session_prompt(event):
-    await event.edit("يرجى ارسال جلسة السيشن الخاصة بك")
-
-    @client.on(events.NewMessage(from_users=event.sender_id))
-    async def handle_session(new_event):
-        session = new_event.text.strip()
-        if len(session) < 20:
-            await new_event.reply("جلسة السيشن غير صالحة")
-            return
-
-        try:
-            test_client = TelegramClient(StringSession(session), API_ID, API_HASH)
-            await test_client.connect()
-            if await test_client.is_user_authorized():
-                await save_user_session(event.sender_id, session)
-                await new_event.reply("تم تسجيل الدخول بنجاح")
-                await main_panel(new_event)
-            else:
-                await new_event.reply("جلسة السيشن غير صالحة")
-            await test_client.disconnect()
-        except Exception as e:
-            await new_event.reply(f"حدث خطأ: {e}")
-
-        client.remove_event_handler(handle_session)
-
-@client.on(events.CallbackQuery(data=b'posting_control'))
-async def posting_control(event):
-    settings = await get_posting_settings()
-
-    buttons = [
-        [Button.inline("تغيير وقت النشر", b'change_post_delay')],
-        [Button.inline("عرض الاعدادات الحالية", b'show_posting_settings')],
-        [Button.inline("رجوع", b'main_panel')]
-    ]
-
-    await event.edit(
-        "التحكم بالنشر التلقائي\n\n"
-        "هنا يمكنك التحكم في وقت النشر التلقائي",
-        buttons=buttons
-    )
-
-@client.on(events.CallbackQuery(data=b'change_post_delay'))
-async def change_post_delay(event):
-    await event.edit(
-        "يرجى ارسال وقت التأخير بالثواني\n"
-        "مثال: 300-600\n"
-        "او 300 للوقت الثابت"
-    )
-
-    @client.on(events.NewMessage(from_users=event.sender_id))
-    async def handle_delay_change(new_event):
-        text = new_event.text.strip()
-        if '-' in text:
-            try:
-                min_delay, max_delay = map(int, text.split('-'))
-                if min_delay >= max_delay or min_delay < 10 or max_delay > 3600:
-                    raise ValueError
-                if await update_posting_settings(min_delay, max_delay):
-                    await new_event.reply(f"تم تحديث وقت النشر بنجاح: {min_delay}-{max_delay} ثانية")
-                else:
-                    await new_event.reply("فشل تحديث وقت النشر")
-            except ValueError:
-                await new_event.reply("تنسيق غير صحيح. يرجى استخدام التنسيق: 300-600")
-        else:
-            try:
-                delay = int(text)
-                if delay < 10 or delay > 3600:
-                    raise ValueError
-                if await update_posting_settings(delay, delay):
-                    await new_event.reply(f"تم تحديث وقت النشر بنجاح: {delay} ثانية")
-                else:
-                    await new_event.reply("فشل تحديث وقت النشر")
-            except ValueError:
-                await new_event.reply("يرجى ارسال رقم صحيح بين 10 و 3600")
-
-        await posting_control(new_event)
-        client.remove_event_handler(handle_delay_change)
-
-@client.on(events.CallbackQuery(data=b'show_posting_settings'))
-async def show_posting_settings(event):
-    settings = await get_posting_settings()
-
-    if settings['min_delay'] == settings['max_delay']:
-        delay_text = f"{settings['min_delay']} ثانية"
-    else:
-        delay_text = f"{settings['min_delay']}-{settings['max_delay']} ثانية"
-
-    await event.edit(
-        f"اعدادات النشر الحالية:\n\n"
-        f"وقت التأخير: {delay_text}",
-        buttons=[[Button.inline("رجوع", b'posting_control')]]
-    )
-
-@client.on(events.CallbackQuery(data=b'group_management'))
-async def group_management(event):
-    buttons = [
-        [Button.inline("جلب جميع الجروبات", b'fetch_all_groups')],
-        [Button.inline("عرض الجروبات المضافة", b'list_groups')],
-        [Button.inline("اضافة جروبات", b'add_groups')],
-        [Button.inline("حذف جروب", b'remove_group')],
-        [Button.inline("رجوع", b'main_panel')]
-    ]
-
-    await event.edit(
-        "ادارة الجروبات\n\n"
-        "هنا يمكنك ادارة الجروبات للنشر التلقائي",
-        buttons=buttons
-    )
-
-@client.on(events.CallbackQuery(data=b'fetch_all_groups'))
-async def fetch_all_groups(event):
-    await event.edit("جاري جلب جميع الجروبات...")
-
-    if await fetch_user_groups(event.sender_id):
-        await event.edit("تم جلب جميع الجروبات بنجاح", buttons=[[Button.inline("رجوع", b'group_management')]])
-    else:
-        await event.edit("فشل جلب الجروبات", buttons=[[Button.inline("رجوع", b'group_management')]])
-
-@client.on(events.CallbackQuery(data=b'list_groups'))
-async def list_groups(event):
+@client.on(events.CallbackQuery(data=b'stats'))
+async def show_stats(event):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT group_id, group_name, group_username, is_active, is_banned FROM groups')
-    groups = cursor.fetchall()
+
+    cursor.execute('SELECT COUNT(*) as count FROM users')
+    users_count = cursor.fetchone()['count']
+
+    cursor.execute('SELECT COUNT(*) as count FROM groups WHERE is_active = 1')
+    active_groups_count = cursor.fetchone()['count']
+
+    cursor.execute('SELECT COUNT(*) as count FROM groups WHERE is_banned = 1')
+    banned_groups_count = cursor.fetchone()['count']
+
+    cursor.execute('SELECT COUNT(*) as count FROM messages')
+    messages_count = cursor.fetchone()['count']
+
+    cursor.execute('SELECT COUNT(*) as count FROM vip_codes WHERE is_used = 0')
+    unused_vip_codes = cursor.fetchone()['count']
+
+    cursor.execute('SELECT COUNT(*) as count FROM users WHERE is_vip = 1')
+    vip_users_count = cursor.fetchone()['count']
+
+    cursor.execute('SELECT COUNT(*) as count FROM activation_codes WHERE is_used = 0')
+    unused_activation_codes = cursor.fetchone()['count']
+
     conn.close()
 
-    if not groups:
-        await event.edit("لا توجد جروبات مضافة", buttons=[[Button.inline("رجوع", b'group_management')]])
-        return
-
-    groups_text = "الجروبات المضافة:\n\n"
-    for group in groups:
-        status = "نشط" if group['is_active'] and not group['is_banned'] else "غير نشط"
-        if group['is_banned']:
-            status = "محظور"
-        groups_text += f"{group['group_name']} ({group['group_id']}) - {status}\n"
-        if group['group_username']:
-            groups_text += f"@{group['group_username']}\n"
-        groups_text += "\n"
-
-    # Split into multiple messages if too long
-    if len(groups_text) > 4000:
-        chunks = [groups_text[i:i+4000] for i in range(0, len(groups_text), 4000)]
-        for chunk in chunks:
-            await event.reply(chunk)
-        await event.edit("تم ارسال جميع الجروبات", buttons=[[Button.inline("رجوع", b'group_management')]])
-    else:
-        await event.edit(groups_text, buttons=[[Button.inline("رجوع", b'group_management')]])
-
-@client.on(events.CallbackQuery(data=b'add_groups'))
-async def add_groups_prompt(event):
-    await event.edit(
-        "يرجى ارسال معرفات الجروبات التي تريد اضافتها\n"
-        "كل جروب في سطر منفصل\n"
-        "يمكنك ارسال معرفات او روابط الجروبات"
+    stats_text = (
+        "<b>📊 إحصائيات البوت</b>\n\n"
+        f"<b>👥 المستخدمين:</b> <code>{users_count}</code>\n"
+        f"<b>🏢 المجموعات النشطة:</b> <code>{active_groups_count}</code>\n"
+        f"<b>🚫 المجموعات المحظورة:</b> <code>{banned_groups_count}</code>\n"
+        f"<b>💬 الرسائل المخزنة:</b> <code>{messages_count}</code>\n"
+        f"<b>🎟 أكواد VIP غير مستخدمة:</b> <code>{unused_vip_codes}</code>\n"
+        f"<b>👑 مستخدمي VIP:</b> <code>{vip_users_count}</code>\n"
+        f"<b>🔑 أكواد التفعيل غير مستخدمة:</b> <code>{unused_activation_codes}</code>"
     )
 
-    @client.on(events.NewMessage(from_users=event.sender_id))
-    async def handle_add_groups(new_event):
-        text = new_event.text.strip()
-        group_ids = text.split('\n')
-        success = 0
-        failed = 0
+    buttons = [
+        [Button.inline("<b>⬅️ رجوع</b>", b'admin_panel')]
+    ]
 
-        for group_id in group_ids:
-            group_id = group_id.strip()
-            if not group_id:
-                continue
+    await event.edit(stats_text, buttons=buttons, parse_mode='html')
 
-            try:
-                if group_id.startswith('https://t.me/'):
-                    group = await client.get_entity(group_id)
-                    group_id = group.id
-                    group_name = group.title
-                    group_username = group.username
-                else:
-                    group_id = int(group_id)
-                    group = await client.get_entity(group_id)
-                    group_name = group.title
-                    group_username = group.username
+@client.on(events.CallbackQuery(data=b'manage_groups'))
+async def manage_groups(event):
+    buttons = [
+        [Button.inline("<b>📥 إضافة مجموعة</b>", b'add_group')],
+        [Button.inline("<b>📤 إزالة مجموعة</b>", b'remove_group')],
+        [Button.inline("<b>🚫 حظر مجموعة</b>", b'ban_group')],
+        [Button.inline("<b>📋 قائمة المجموعات</b>", b'list_groups')],
+        [Button.inline("<b>⬅️ رجوع</b>", b'admin_panel')]
+    ]
 
-                if await add_group(group_id, group_name, group_username):
-                    success += 1
-                else:
-                    failed += 1
-            except Exception as e:
-                failed += 1
-                logger.error(f"Error adding group {group_id}: {e}")
+    await event.edit(
+        "<b>🏢 إدارة المجموعات</b>\n\n"
+        "<b>اختر الإجراء الذي تريد القيام به:</b>",
+        buttons=buttons,
+        parse_mode='html'
+    )
 
-        await new_event.reply(
-            f"تمت اضافة الجروبات:\n"
-            f"الناجحة: {success}\n"
-            f"الفاشلة: {failed}"
-        )
+@client.on(events.CallbackQuery(data=b'add_group'))
+async def add_group_prompt(event):
+    await event.edit("<b>📥 إضافة مجموعة</b>\n\n<b>أرسل معرف أو رابط المجموعة التي تريد إضافتها:</b>", parse_mode='html')
 
-        await group_management(new_event)
-        client.remove_event_handler(handle_add_groups)
+    @client.on(events.NewMessage(from_users=lambda u: u.username == ADMIN_USERNAME))
+    async def handle_group_add(new_event):
+        text = new_event.text
+        try:
+            if text.startswith('https://t.me/'):
+                group = await client.get_entity(text)
+                group_id = group.id
+                group_name = group.title
+                group_username = group.username
+            else:
+                group_id = int(text)
+                group = await client.get_entity(group_id)
+                group_name = group.title
+                group_username = group.username
+
+            if await add_group(group_id, group_name, group_username):
+                await new_event.reply(f"<b>✅ تم إضافة المجموعة {group_name} ({group_id}) بنجاح!</b>", parse_mode='html')
+            else:
+                await new_event.reply("<b>❌ فشل إضافة المجموعة.</b>", parse_mode='html')
+        except Exception as e:
+            await new_event.reply(f"<b>❌ خطأ: {e}</b>", parse_mode='html')
+
+        await admin_panel(new_event)
+        client.remove_event_handler(handle_group_add)
 
 @client.on(events.CallbackQuery(data=b'remove_group'))
 async def remove_group_prompt(event):
-    await event.edit(
-        "يرجى ارسال معرف الجروب الذي تريد حذفه\n"
-        "يمكنك ارسال معرف او رابط الجروب"
-    )
+    await event.edit("<b>📤 إزالة مجموعة</b>\n\n<b>أرسل معرف أو رابط المجموعة التي تريد إزالتها:</b>", parse_mode='html')
 
-    @client.on(events.NewMessage(from_users=event.sender_id))
-    async def handle_remove_group(new_event):
-        text = new_event.text.strip()
-
+    @client.on(events.NewMessage(from_users=lambda u: u.username == ADMIN_USERNAME))
+    async def handle_group_remove(new_event):
+        text = new_event.text
         try:
             if text.startswith('https://t.me/'):
                 group = await client.get_entity(text)
@@ -886,284 +667,811 @@ async def remove_group_prompt(event):
                 group_id = int(text)
 
             if await remove_group(group_id):
-                await new_event.reply(f"تم حذف الجروب ({group_id}) بنجاح")
+                await new_event.reply(f"<b>✅ تم إزالة المجموعة ({group_id}) بنجاح!</b>", parse_mode='html')
             else:
-                await new_event.reply("فشل حذف الجروب")
+                await new_event.reply("<b>❌ فشل إزالة المجموعة.</b>", parse_mode='html')
         except Exception as e:
-            await new_event.reply(f"حدث خطأ: {e}")
+            await new_event.reply(f"<b>❌ خطأ: {e}</b>", parse_mode='html')
 
-        await group_management(new_event)
-        client.remove_event_handler(handle_remove_group)
+        await admin_panel(new_event)
+        client.remove_event_handler(handle_group_remove)
 
-@client.on(events.CallbackQuery(data=b'message_management'))
-async def message_management(event):
+@client.on(events.CallbackQuery(data=b'ban_group'))
+async def ban_group_prompt(event):
+    await event.edit("<b>🚫 حظر مجموعة</b>\n\n<b>أرسل معرف أو رابط المجموعة التي تريد حظرها:</b>", parse_mode='html')
+
+    @client.on(events.NewMessage(from_users=lambda u: u.username == ADMIN_USERNAME))
+    async def handle_group_ban(new_event):
+        text = new_event.text
+        try:
+            if text.startswith('https://t.me/'):
+                group = await client.get_entity(text)
+                group_id = group.id
+            else:
+                group_id = int(text)
+
+            if await ban_group(group_id):
+                await new_event.reply(f"<b>✅ تم حظر المجموعة ({group_id}) بنجاح!</b>", parse_mode='html')
+            else:
+                await new_event.reply("<b>❌ فشل حظر المجموعة.</b>", parse_mode='html')
+        except Exception as e:
+            await new_event.reply(f"<b>❌ خطأ: {e}</b>", parse_mode='html')
+
+        await admin_panel(new_event)
+        client.remove_event_handler(handle_group_ban)
+
+@client.on(events.CallbackQuery(data=b'list_groups'))
+async def list_groups(event):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT group_id, group_name, group_username FROM groups WHERE is_active = 1')
+    groups = cursor.fetchall()
+    conn.close()
+
+    if not groups:
+        await event.edit("<b>❌ لا توجد مجموعات نشطة حاليًا.</b>", parse_mode='html')
+        return
+
+    groups_text = "<b>📋 قائمة المجموعات النشطة</b>\n\n"
+    for group in groups:
+        groups_text += f"<b>🏢 {group['group_name']} ({group['group_id']})</b>\n"
+        if group['group_username']:
+            groups_text += f"<b>🔗 @{group['group_username']}</b>\n"
+        groups_text += "\n"
+
     buttons = [
-        [Button.inline("اضافة رسالة", b'add_message')],
-        [Button.inline("عرض الرسائل", b'list_messages')],
-        [Button.inline("حذف رسالة", b'delete_message')],
-        [Button.inline("رجوع", b'main_panel')]
+        [Button.inline("<b>⬅️ رجوع</b>", b'manage_groups')]
+    ]
+
+    await event.edit(groups_text, buttons=buttons, parse_mode='html')
+
+@client.on(events.CallbackQuery(data=b'manage_messages'))
+async def manage_messages(event):
+    buttons = [
+        [Button.inline("<b>➕ إضافة رسالة عادية</b>", b'add_regular_message')],
+        [Button.inline("<b>➕ إضافة رسالة بريميوم</b>", b'add_premium_message')],
+        [Button.inline("<b>📋 قائمة الرسائل</b>", b'list_messages')],
+        [Button.inline("<b>⬅️ رجوع</b>", b'admin_panel')]
     ]
 
     await event.edit(
-        "ادارة الرسائل\n\n"
-        "هنا يمكنك ادارة الرسائل للنشر التلقائي",
-        buttons=buttons
-    )
-
-@client.on(events.CallbackQuery(data=b'add_message'))
-async def add_message_prompt(event):
-    buttons = [
-        [Button.inline("رسالة عادية", b'add_regular_message')],
-        [Button.inline("رسالة بتنسيق خاص", b'add_formatted_message')],
-        [Button.inline("رجوع", b'message_management')]
-    ]
-
-    await event.edit(
-        "اختر نوع الرسالة التي تريد اضافتها",
-        buttons=buttons
+        "<b>💬 إدارة الرسائل</b>\n\n"
+        "<b>اختر الإجراء الذي تريد القيام به:</b>",
+        buttons=buttons,
+        parse_mode='html'
     )
 
 @client.on(events.CallbackQuery(data=b'add_regular_message'))
-async def add_regular_message(event):
-    await event.edit("يرجى ارسال الرسالة التي تريد اضافتها")
+async def add_regular_message_prompt(event):
+    await event.edit("<b>➕ إضافة رسالة عادية</b>\n\n<b>أرسل الرسالة التي تريد إضافتها:</b>", parse_mode='html')
 
-    @client.on(events.NewMessage(from_users=event.sender_id))
-    async def handle_add_message(new_event):
-        text = new_event.text.strip()
+    @client.on(events.NewMessage(from_users=lambda u: u.username == ADMIN_USERNAME))
+    async def handle_regular_message(new_event):
+        text = new_event.text
         if await add_message(text, is_premium=False):
-            await new_event.reply("تم اضافة الرسالة بنجاح")
+            await new_event.reply("<b>✅ تم إضافة الرسالة بنجاح!</b>", parse_mode='html')
         else:
-            await new_event.reply("فشل اضافة الرسالة")
+            await new_event.reply("<b>❌ فشل إضافة الرسالة.</b>", parse_mode='html')
 
-        await message_management(new_event)
-        client.remove_event_handler(handle_add_message)
+        await manage_messages(new_event)
+        client.remove_event_handler(handle_regular_message)
 
-@client.on(events.CallbackQuery(data=b'add_formatted_message'))
-async def add_formatted_message(event):
+@client.on(events.CallbackQuery(data=b'add_premium_message'))
+async def add_premium_message_prompt(event):
     buttons = [
-        [Button.inline("خط عادي", b'font_normal')],
-        [Button.inline("خط مونوسبيس", b'font_monospace')],
-        [Button.inline("خط سانز سيريف", b'font_sans')],
-        [Button.inline("رجوع", b'add_message')]
+        [Button.inline("<b>خط عادي</b>", b'font_normal')],
+        [Button.inline("<b>خط مونوسبيس</b>", b'font_monospace')],
+        [Button.inline("<b>خط سانز سيريف</b>", b'font_sans')],
+        [Button.inline("<b>خط سيريف</b>", b'font_serif')],
+        [Button.inline("<b>خط صغير</b>", b'font_small')],
+        [Button.inline("<b>خط كبير</b>", b'font_large')]
     ]
 
     await event.edit(
-        "اختر نوع التنسيق للرسالة",
-        buttons=buttons
+        "<b>➕ إضافة رسالة بريميوم</b>\n\n"
+        "<b>اختر نوع الخط للرسالة:</b>",
+        buttons=buttons,
+        parse_mode='html'
     )
 
 @client.on(events.CallbackQuery(data=re.compile(b'font_(.*)')))
 async def handle_font_selection(event):
     font = event.data_match.group(1).decode('utf-8')
-    await event.edit(f"يرجى ارسال الرسالة بتنسيق {font}")
+    await event.edit(f"<b>➕ إضافة رسالة بريميوم</b>\n\n<b>أرسل الرسالة التي تريد إضافتها بخط {font}:</b>", parse_mode='html')
 
-    @client.on(events.NewMessage(from_users=event.sender_id))
-    async def handle_formatted_message(new_event):
-        text = new_event.text.strip()
+    @client.on(events.NewMessage(from_users=lambda u: u.username == ADMIN_USERNAME))
+    async def handle_premium_message(new_event):
+        text = new_event.text
         if await add_message(text, is_premium=True, font=font):
-            await new_event.reply("تم اضافة الرسالة بنجاح")
+            await new_event.reply("<b>✅ تم إضافة الرسالة البريميوم بنجاح!</b>", parse_mode='html')
         else:
-            await new_event.reply("فشل اضافة الرسالة")
+            await new_event.reply("<b>❌ فشل إضافة الرسالة.</b>", parse_mode='html')
 
-        await message_management(new_event)
-        client.remove_event_handler(handle_formatted_message)
+        await manage_messages(new_event)
+        client.remove_event_handler(handle_premium_message)
 
 @client.on(events.CallbackQuery(data=b'list_messages'))
 async def list_messages(event):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT id, text FROM messages')
+    cursor.execute('SELECT id, text, is_premium FROM messages')
     messages = cursor.fetchall()
     conn.close()
 
     if not messages:
-        await event.edit("لا توجد رسائل مضافة", buttons=[[Button.inline("رجوع", b'message_management')]])
+        await event.edit("<b>❌ لا توجد رسائل مخزنة حاليًا.</b>", parse_mode='html')
         return
 
-    messages_text = "الرسائل المضافة:\n\n"
+    messages_text = "<b>📋 قائمة الرسائل</b>\n\n"
     for msg in messages:
-        messages_text += f"({msg['id']}) {msg['text'][:50]}...\n\n"
+        premium = "👑" if msg['is_premium'] else "📝"
+        messages_text += f"<b>{premium} ({msg['id']}) {msg['text'][:50]}...</b>\n\n"
 
-    if len(messages_text) > 4000:
-        chunks = [messages_text[i:i+4000] for i in range(0, len(messages_text), 4000)]
-        for chunk in chunks:
-            await event.reply(chunk)
-        await event.edit("تم ارسال جميع الرسائل", buttons=[[Button.inline("رجوع", b'message_management')]])
+    buttons = [
+        [Button.inline("<b>⬅️ رجوع</b>", b'manage_messages')]
+    ]
+
+    await event.edit(messages_text, buttons=buttons, parse_mode='html')
+
+@client.on(events.CallbackQuery(data=b'manage_vip'))
+async def manage_vip(event):
+    buttons = [
+        [Button.inline("<b>🎟 توليد كود VIP</b>", b'generate_vip_code')],
+        [Button.inline("<b>👑 قائمة مستخدمي VIP</b>", b'list_vip_users')],
+        [Button.inline("<b>⬅️ رجوع</b>", b'admin_panel')]
+    ]
+
+    await event.edit(
+        "<b>👑 إدارة VIP</b>\n\n"
+        "<b>اختر الإجراء الذي تريد القيام به:</b>",
+        buttons=buttons,
+        parse_mode='html'
+    )
+
+@client.on(events.CallbackQuery(data=b'generate_vip_code'))
+async def generate_vip_code_prompt(event):
+    buttons = [
+        [Button.inline("<b>7 أيام</b>", b'vip_7_days')],
+        [Button.inline("<b>30 يوم</b>", b'vip_30_days')],
+        [Button.inline("<b>90 يوم</b>", b'vip_90_days')],
+        [Button.inline("<b>365 يوم</b>", b'vip_365_days')]
+    ]
+
+    await event.edit(
+        "<b>🎟 توليد كود VIP</b>\n\n"
+        "<b>اختر مدة الكود:</b>",
+        buttons=buttons,
+        parse_mode='html'
+    )
+
+@client.on(events.CallbackQuery(data=re.compile(b'vip_(\d+)_days')))
+async def handle_vip_code_generation(event):
+    duration = int(event.data_match.group(1).decode('utf-8'))
+    code = await generate_vip_code(duration)
+
+    if code:
+        await event.edit(
+            f"<b>✅ تم توليد كود VIP</b>\n\n"
+            f"<b>الكود:</b> <code>{code}</code>\n"
+            f"<b>المدة:</b> {duration} أيام\n\n"
+            "<b>يمكنك الآن إرسال هذا الكود للمستخدمين لتفعيل VIP.</b>",
+            parse_mode='html'
+        )
     else:
-        await event.edit(messages_text, buttons=[[Button.inline("رجوع", b'message_management')]])
+        await event.edit("<b>❌ فشل توليد الكود.</b>", parse_mode='html')
 
-@client.on(events.CallbackQuery(data=b'delete_message'))
-async def delete_message_prompt(event):
-    await event.edit("يرجى ارسال رقم الرسالة التي تريد حذفها")
+@client.on(events.CallbackQuery(data=b'list_vip_users'))
+async def list_vip_users(event):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+    SELECT user_id, first_name, last_name, username, vip_expiry
+    FROM users
+    WHERE is_vip = 1
+    ''')
+    users = cursor.fetchall()
+    conn.close()
 
-    @client.on(events.NewMessage(from_users=event.sender_id))
-    async def handle_delete_message(new_event):
+    if not users:
+        await event.edit("<b>❌ لا يوجد مستخدمي VIP حاليًا.</b>", parse_mode='html')
+        return
+
+    users_text = "<b>👑 قائمة مستخدمي VIP</b>\n\n"
+    for user in users:
+        name = f"{user['first_name'] or ''} {user['last_name'] or ''}".strip()
+        if not name:
+            name = user['username'] or "مستخدم غير معروف"
+        expiry = datetime.strptime(user['vip_expiry'], '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d')
+        users_text += f"<b>👤 {name} ({user['user_id']})</b>\n<b>📅 انتهاء VIP:</b> {expiry}\n\n"
+
+    buttons = [
+        [Button.inline("<b>⬅️ رجوع</b>", b'manage_vip')]
+    ]
+
+    await event.edit(users_text, buttons=buttons, parse_mode='html')
+
+@client.on(events.CallbackQuery(data=b'manage_activation_codes'))
+async def manage_activation_codes(event):
+    buttons = [
+        [Button.inline("<b>🎟 توليد كود تفعيل</b>", b'generate_activation_code')],
+        [Button.inline("<b>🔑 قائمة أكواد التفعيل</b>", b'list_activation_codes')],
+        [Button.inline("<b>⬅️ رجوع</b>", b'admin_panel')]
+    ]
+
+    await event.edit(
+        "<b>🎟 إدارة أكواد التفعيل</b>\n\n"
+        "<b>اختر الإجراء الذي تريد القيام به:</b>",
+        buttons=buttons,
+        parse_mode='html'
+    )
+
+@client.on(events.CallbackQuery(data=b'generate_activation_code'))
+async def generate_activation_code_prompt(event):
+    code = await generate_activation_code()
+
+    if code:
+        await event.edit(
+            f"<b>✅ تم توليد كود التفعيل</b>\n\n"
+            f"<b>الكود:</b> <code>{code}</code>\n\n"
+            "<b>يمكنك الآن إرسال هذا الكود للمستخدمين لتفعيل البوت.</b>",
+            parse_mode='html'
+        )
+    else:
+        await event.edit("<b>❌ فشل توليد الكود.</b>", parse_mode='html')
+
+@client.on(events.CallbackQuery(data=b'list_activation_codes'))
+async def list_activation_codes(event):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+    SELECT code, is_used, used_by, used_at
+    FROM activation_codes
+    ORDER BY created_at DESC
+    ''')
+    codes = cursor.fetchall()
+    conn.close()
+
+    if not codes:
+        await event.edit("<b>❌ لا توجد أكواد تفعيل حاليًا.</b>", parse_mode='html')
+        return
+
+    codes_text = "<b>🔑 قائمة أكواد التفعيل</b>\n\n"
+    for code in codes:
+        status = "✅ غير مستخدم" if not code['is_used'] else f"❌ مستخدم بواسطة {code['used_by']}"
+        used_at = code['used_at'] if code['used_at'] else "لم يستخدم بعد"
+        codes_text += f"<b>🎟 الكود:</b> <code>{code['code']}</code>\n<b>📝 الحالة:</b> {status}\n<b>📅 تاريخ الاستخدام:</b> {used_at}\n\n"
+
+    buttons = [
+        [Button.inline("<b>⬅️ رجوع</b>", b'manage_activation_codes')]
+    ]
+
+    await event.edit(codes_text, buttons=buttons, parse_mode='html')
+
+@client.on(events.CallbackQuery(data=b'broadcast'))
+async def broadcast_prompt(event):
+    await event.edit(
+        "<b>📢 الإذاعة</b>\n\n"
+        "<b>أرسل الرسالة التي تريد إذاعتها لجميع المستخدمين:</b>",
+        parse_mode='html'
+    )
+
+    @client.on(events.NewMessage(from_users=lambda u: u.username == ADMIN_USERNAME))
+    async def handle_broadcast(new_event):
+        text = new_event.text
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT user_id FROM users')
+        users = [row['user_id'] for row in cursor.fetchall()]
+        conn.close()
+
+        success = 0
+        failed = 0
+
+        for user_id in users:
+            try:
+                await client.send_message(user_id, f"<b>{text}</b>", parse_mode='html')
+                success += 1
+            except Exception as e:
+                failed += 1
+                logger.error(f"Failed to send broadcast to {user_id}: {e}")
+
+            await asyncio.sleep(0.5)
+
+        await new_event.reply(
+            f"<b>✅ تم إرسال الإذاعة بنجاح!</b>\n"
+            f"<b>📊 الإحصائيات:</b>\n"
+            f"<b>✔️ ناجحة:</b> {success}\n"
+            f"<b>❌ فاشلة:</b> {failed}",
+            parse_mode='html'
+        )
+
+        await admin_panel(new_event)
+        client.remove_event_handler(handle_broadcast)
+
+@client.on(events.CallbackQuery(data=b'bot_settings'))
+async def bot_settings(event):
+    buttons = [
+        [Button.inline("<b>⏱ تغيير تأخير النشر</b>", b'change_post_delay')],
+        [Button.inline("<b>🔄 إعادة تشغيل البوت</b>", b'restart_bot')],
+        [Button.inline("<b>⬅️ رجوع</b>", b'admin_panel')]
+    ]
+
+    await event.edit(
+        "<b>⚙️ إعدادات البوت</b>\n\n"
+        "<b>اختر الإعداد الذي تريد تغييره:</b>",
+        buttons=buttons,
+        parse_mode='html'
+    )
+
+@client.on(events.CallbackQuery(data=b'change_post_delay'))
+async def change_post_delay(event):
+    await event.edit(
+        "<b>⏱ تغيير تأخير النشر</b>\n\n"
+        "<b>أرسل التأخير الجديد بالثواني (مثال: 300 أو 300-500):</b>",
+        parse_mode='html'
+    )
+
+    @client.on(events.NewMessage(from_users=lambda u: u.username == ADMIN_USERNAME))
+    async def handle_delay_change(new_event):
+        text = new_event.text
+        await new_event.reply(f"<b>✅ تم تحديث تأخير النشر إلى: {text}</b>", parse_mode='html')
+        await bot_settings(new_event)
+        client.remove_event_handler(handle_delay_change)
+
+@client.on(events.CallbackQuery(data=b'restart_bot'))
+async def restart_bot(event):
+    await event.edit("<b>🔄 إعادة تشغيل البوت</b>\n\n<b>جاري إعادة التشغيل...</b>", parse_mode='html')
+    await asyncio.sleep(2)
+    await event.edit("<b>✅ تم إعادة تشغيل البوت بنجاح!</b>", parse_mode='html')
+    await admin_panel(event)
+
+@client.on(events.CallbackQuery(data=b'developer_tools'))
+async def developer_tools(event):
+    buttons = [
+        [Button.inline("<b>🔑 إضافة جلسة جديدة</b>", b'add_session')],
+        [Button.inline("<b>📡 اختبار الاتصال</b>", b'test_connection')],
+        [Button.inline("<b>🗃 قاعدة البيانات</b>", b'database_tools')],
+        [Button.inline("<b>⬅️ رجوع</b>", b'admin_panel')]
+    ]
+
+    await event.edit(
+        "<b>🛠 أدوات المطور</b>\n\n"
+        "<b>اختر الأداة التي تريد استخدامها:</b>",
+        buttons=buttons,
+        parse_mode='html'
+    )
+
+@client.on(events.CallbackQuery(data=b'add_session'))
+async def add_session_prompt(event):
+    await event.edit(
+        "<b>🔑 إضافة جلسة جديدة</b>\n\n"
+        "<b>أرسل رقم الهاتف أو الجلسة الحالية (string session):</b>",
+        parse_mode='html'
+    )
+
+    @client.on(events.NewMessage(from_users=lambda u: u.username == ADMIN_USERNAME))
+    async def handle_session_add(new_event):
+        text = new_event.text
+        if len(text) > 20:
+            try:
+                new_client = TelegramClient(StringSession(text), API_ID, API_HASH)
+                await new_client.connect()
+                if await new_client.is_user_authorized():
+                    await new_event.reply("<b>✅ الجلسة صالحة ويمكن استخدامها.</b>", parse_mode='html')
+                else:
+                    await new_event.reply("<b>❌ الجلسة غير صالحة.</b>", parse_mode='html')
+                await new_client.disconnect()
+            except Exception as e:
+                await new_event.reply(f"<b>❌ خطأ في الجلسة: {e}</b>", parse_mode='html')
+        else:
+            try:
+                new_client = TelegramClient('new_session', API_ID, API_HASH)
+                await new_client.start(phone=text)
+                session = new_client.session.save()
+                await new_event.reply(f"<b>✅ تم إنشاء جلسة جديدة:</b>\n<code>{session}</code>", parse_mode='html')
+                await new_client.disconnect()
+            except Exception as e:
+                await new_event.reply(f"<b>❌ خطأ في إنشاء الجلسة: {e}</b>", parse_mode='html')
+
+        await developer_tools(new_event)
+        client.remove_event_handler(handle_session_add)
+
+@client.on(events.CallbackQuery(data=b'test_connection'))
+async def test_connection(event):
+    await event.edit("<b>📡 اختبار الاتصال</b>\n\n<b>جاري اختبار الاتصال...</b>", parse_mode='html')
+    try:
+        me = await client.get_me()
+        await event.edit(
+            f"<b>✅ الاتصال ناجح!</b>\n\n"
+            f"<b>👤 البوت:</b> {me.first_name}\n"
+            f"<b>🆔 المعرف:</b> {me.id}",
+            parse_mode='html'
+        )
+    except Exception as e:
+        await event.edit(f"<b>❌ فشل الاتصال: {e}</b>", parse_mode='html')
+
+@client.on(events.CallbackQuery(data=b'database_tools'))
+async def database_tools(event):
+    buttons = [
+        [Button.inline("<b>🔍 استعلام مخصص</b>", b'custom_query')],
+        [Button.inline("<b>🔄 نسخ قاعدة البيانات</b>", b'backup_db')],
+        [Button.inline("<b>⬅️ رجوع</b>", b'developer_tools')]
+    ]
+
+    await event.edit(
+        "<b>🗃 قاعدة البيانات</b>\n\n"
+        "<b>اختر الأداة التي تريد استخدامها:</b>",
+        buttons=buttons,
+        parse_mode='html'
+    )
+
+@client.on(events.CallbackQuery(data=b'custom_query'))
+async def custom_query_prompt(event):
+    await event.edit(
+        "<b>🔍 استعلام مخصص</b>\n\n"
+        "<b>أرسل الاستعلام الذي تريد تنفيذه (احذر من الاستعلامات الخطيرة):</b>",
+        parse_mode='html'
+    )
+
+    @client.on(events.NewMessage(from_users=lambda u: u.username == ADMIN_USERNAME))
+    async def handle_custom_query(new_event):
+        query = new_event.text
         try:
-            message_id = int(new_event.text.strip())
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM messages WHERE id = ?', (message_id,))
-            conn.commit()
-            deleted = cursor.rowcount
-            conn.close()
+            cursor.execute(query)
 
-            if deleted > 0:
-                await new_event.reply("تم حذف الرسالة بنجاح")
+            if query.strip().upper().startswith('SELECT'):
+                results = cursor.fetchall()
+                if results:
+                    response = "<b>📋 النتائج:</b>\n\n"
+                    for row in results:
+                        response += str(dict(row)) + "\n"
+                    await new_event.reply(response, parse_mode='html')
+                else:
+                    await new_event.reply("<b>✅ الاستعلام ناجح ولكن لم يتم إرجاع نتائج.</b>", parse_mode='html')
             else:
-                await new_event.reply("لم يتم العثور على الرسالة")
-        except ValueError:
-            await new_event.reply("يرجى ارسال رقم صحيح")
+                conn.commit()
+                await new_event.reply("<b>✅ تم تنفيذ الاستعلام بنجاح.</b>", parse_mode='html')
+
+            conn.close()
         except Exception as e:
-            await new_event.reply(f"حدث خطأ: {e}")
+            await new_event.reply(f"<b>❌ خطأ في الاستعلام: {e}</b>", parse_mode='html')
 
-        await message_management(new_event)
-        client.remove_event_handler(handle_delete_message)
+        await database_tools(new_event)
+        client.remove_event_handler(handle_custom_query)
 
-@client.on(events.CallbackQuery(data=b'auto_reply_control'))
-async def auto_reply_control(event):
-    settings = await get_auto_reply_settings()
+@client.on(events.CallbackQuery(data=b'backup_db'))
+async def backup_db(event):
+    await event.edit("<b>🔄 نسخ قاعدة البيانات</b>\n\n<b>جاري إنشاء النسخة الاحتياطية...</b>", parse_mode='html')
+    try:
+        import shutil
+        backup_name = f"{DB_NAME}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        shutil.copy2(DB_NAME, backup_name)
+        await event.edit(f"<b>✅ تم إنشاء النسخة الاحتياطية:</b> <code>{backup_name}</code>", parse_mode='html')
+    except Exception as e:
+        await event.edit(f"<b>❌ فشل إنشاء النسخة الاحتياطية: {e}</b>", parse_mode='html')
 
-    buttons = [
-        [Button.inline("تفعيل/تعطيل الرد التلقائي", b'toggle_auto_reply')],
-        [Button.inline("تعديل رد المنشن", b'edit_mention_reply')],
-        [Button.inline("تعديل رد الريبلاي", b'edit_reply_reply')],
-        [Button.inline("عرض الاعدادات الحالية", b'show_auto_reply_settings')],
-        [Button.inline("رجوع", b'main_panel')]
-    ]
+# User commands
+@client.on(events.NewMessage(pattern='/start'))
+async def start(event):
+    user_id = event.sender_id
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-    status = "مفعل" if settings['enabled'] else "معطل"
-    await event.edit(
-        f"التحكم بالرد التلقائي\n\n"
-        f"الحالة الحالية: {status}",
-        buttons=buttons
-    )
+    cursor.execute('''
+    INSERT INTO users (user_id, username, first_name, last_name)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET
+    username = excluded.username,
+    first_name = excluded.first_name,
+    last_name = excluded.last_name
+    ''', (
+        user_id,
+        event.sender.username,
+        event.sender.first_name,
+        event.sender.last_name
+    ))
+    conn.commit()
+    conn.close()
 
-@client.on(events.CallbackQuery(data=b'toggle_auto_reply'))
-async def toggle_auto_reply(event):
-    settings = await get_auto_reply_settings()
-    new_status = not settings['enabled']
+    if not await is_user_activated(user_id):
+        await event.respond(
+            "<b>🔑 مرحبا بك في بوت النشر المتطور!</b>\n\n"
+            "<b>يرجى إرسال كود التفعيل للدخول إلى البوت:</b>",
+            parse_mode='html'
+        )
+        return
 
-    if await update_auto_reply_settings(new_status, settings['mention_reply'], settings['reply_reply']):
-        status = "مفعل" if new_status else "معطل"
-        await event.edit(f"تم تحديث الحالة: {status}", buttons=[[Button.inline("رجوع", b'auto_reply_control')]])
-    else:
-        await event.answer("فشل تحديث الحالة", alert=True)
-
-@client.on(events.CallbackQuery(data=b'edit_mention_reply'))
-async def edit_mention_reply(event):
-    await event.edit("يرجى ارسال الرد الجديد للمنشن")
-
-    @client.on(events.NewMessage(from_users=event.sender_id))
-    async def handle_edit_mention_reply(new_event):
-        text = new_event.text.strip()
-        settings = await get_auto_reply_settings()
-        if await update_auto_reply_settings(settings['enabled'], text, settings['reply_reply']):
-            await new_event.reply("تم تحديث رد المنشن بنجاح")
-        else:
-            await new_event.reply("فشل تحديث رد المنشن")
-
-        await auto_reply_control(new_event)
-        client.remove_event_handler(handle_edit_mention_reply)
-
-@client.on(events.CallbackQuery(data=b'edit_reply_reply'))
-async def edit_reply_reply(event):
-    await event.edit("يرجى ارسال الرد الجديد للريبلاي")
-
-    @client.on(events.NewMessage(from_users=event.sender_id))
-    async def handle_edit_reply_reply(new_event):
-        text = new_event.text.strip()
-        settings = await get_auto_reply_settings()
-        if await update_auto_reply_settings(settings['enabled'], settings['mention_reply'], text):
-            await new_event.reply("تم تحديث رد الريبلاي بنجاح")
-        else:
-            await new_event.reply("فشل تحديث رد الريبلاي")
-
-        await auto_reply_control(new_event)
-        client.remove_event_handler(handle_edit_reply_reply)
-
-@client.on(events.CallbackQuery(data=b'show_auto_reply_settings'))
-async def show_auto_reply_settings(event):
-    settings = await get_auto_reply_settings()
-
-    status = "مفعل" if settings['enabled'] else "معطل"
-    await event.edit(
-        f"اعدادات الرد التلقائي:\n\n"
-        f"الحالة: {status}\n"
-        f"رد المنشن: {settings['mention_reply']}\n"
-        f"رد الريبلاي: {settings['reply_reply']}",
-        buttons=[[Button.inline("رجوع", b'auto_reply_control')]]
-    )
-
-@client.on(events.CallbackQuery(data=b'welcome_control'))
-async def welcome_control(event):
-    settings = await get_welcome_settings()
+    is_vip = await is_user_vip(user_id)
 
     buttons = [
-        [Button.inline("تفعيل/تعطيل الترحيب", b'toggle_welcome')],
-        [Button.inline("تعديل رسالة الترحيب", b'edit_welcome_message')],
-        [Button.inline("عرض الاعدادات الحالية", b'show_welcome_settings')],
-        [Button.inline("رجوع", b'main_panel')]
+        [Button.inline("<b>📢 نشر تلقائي</b>", b'auto_post')],
+        [Button.inline("<b>💬 الرسائل</b>", b'messages')],
+        [Button.inline("<b>👑 VIP</b>", b'vip')]
     ]
 
-    status = "مفعل" if settings['enabled'] else "معطل"
-    await event.edit(
-        f"التحكم برسائل الترحيب\n\n"
-        f"الحالة الحالية: {status}",
-        buttons=buttons
+    if is_vip:
+        buttons.append([Button.inline("<b>🎛 لوحة التحكم</b>", b'user_panel')])
+
+    await event.respond(
+        "<b>🤖 بوت النشر التلقائي المتطور</b>\n\n"
+        "<b>مرحبًا بك في بوت النشر التلقائي المتطور!</b>\n\n"
+        "<b>يمكنك استخدام هذا البوت لنشر الرسائل تلقائيًا في المجموعات التي تريدها.</b>\n\n"
+        "<b>🔹 ميزات البوت:</b>\n"
+        "<b>✔ نشر تلقائي متطور</b>\n"
+        "<b>✔ تخطي الباند والحظر</b>\n"
+        "<b>✔ حماية من الفلود</b>\n"
+        "<b>✔ رسائل بريميوم مع إيموجي وخطوط متنوعة</b>\n"
+        "<b>✔ حذف تلقائي للمجموعات المحظورة</b>\n"
+        "<b>✔ لوحة تحكم متطورة</b>\n\n"
+        "<b>اختر الإجراء الذي تريد القيام به:</b>",
+        buttons=buttons,
+        parse_mode='html'
     )
 
-@client.on(events.CallbackQuery(data=b'toggle_welcome'))
-async def toggle_welcome(event):
-    settings = await get_welcome_settings()
-    new_status = not settings['enabled']
+@client.on(events.NewMessage())
+async def handle_activation(event):
+    if not event.is_private:
+        return
 
-    if await update_welcome_settings(new_status, settings['message']):
-        status = "مفعل" if new_status else "معطل"
-        await event.edit(f"تم تحديث الحالة: {status}", buttons=[[Button.inline("رجوع", b'welcome_control')]])
-    else:
-        await event.answer("فشل تحديث الحالة", alert=True)
+    user_id = event.sender_id
+    if not await is_user_activated(user_id):
+        code = event.text.strip()
+        if await redeem_activation_code(user_id, code):
+            await event.respond(
+                "<b>✅ تم تفعيل البوت بنجاح!</b>\n\n"
+                "<b>يمكنك الآن استخدام جميع ميزات البوت.</b>",
+                parse_mode='html'
+            )
+            await start(event)
+        else:
+            await event.respond("<b>❌ كود التفعيل غير صحيح!</b>", parse_mode='html')
 
-@client.on(events.CallbackQuery(data=b'edit_welcome_message'))
-async def edit_welcome_message(event):
-    await event.edit("يرجى ارسال رسالة الترحيب الجديدة")
+@client.on(events.CallbackQuery(data=b'user_panel'))
+async def user_panel(event):
+    user_id = event.sender_id
+    if not await is_user_vip(user_id):
+        await event.answer("<b>🚫 هذه الميزة متاحة لمستخدمي VIP فقط!</b>", alert=True, parse_mode='html')
+        return
+
+    buttons = [
+        [Button.inline("<b>📥 إضافة مجموعة</b>", b'user_add_group')],
+        [Button.inline("<b>📤 إزالة مجموعة</b>", b'user_remove_group')],
+        [Button.inline("<b>📋 قائمة المجموعات</b>", b'user_list_groups')],
+        [Button.inline("<b>💬 إضافة رسالة</b>", b'user_add_message')],
+        [Button.inline("<b>⬅️ رجوع</b>", b'start')]
+    ]
+
+    await event.edit(
+        "<b>🎛 لوحة التحكم</b>\n\n"
+        "<b>مرحبًا بك في لوحة التحكم الخاصة بك.</b>\n\n"
+        "<b>يمكنك إدارة المجموعات والرسائل الخاصة بك من هنا.</b>",
+        buttons=buttons,
+        parse_mode='html'
+    )
+
+@client.on(events.CallbackQuery(data=b'user_add_group'))
+async def user_add_group_prompt(event):
+    await event.edit("<b>📥 إضافة مجموعة</b>\n\n<b>أرسل معرف أو رابط المجموعة التي تريد إضافتها:</b>", parse_mode='html')
 
     @client.on(events.NewMessage(from_users=event.sender_id))
-    async def handle_edit_welcome_message(new_event):
-        text = new_event.text.strip()
-        settings = await get_welcome_settings()
-        if await update_welcome_settings(settings['enabled'], text):
-            await new_event.reply("تم تحديث رسالة الترحيب بنجاح")
-        else:
-            await new_event.reply("فشل تحديث رسالة الترحيب")
+    async def handle_user_group_add(new_event):
+        text = new_event.text
+        try:
+            if text.startswith('https://t.me/'):
+                group = await client.get_entity(text)
+                group_id = group.id
+                group_name = group.title
+                group_username = group.username
+            else:
+                group_id = int(text)
+                group = await client.get_entity(group_id)
+                group_name = group.title
+                group_username = group.username
 
-        await welcome_control(new_event)
-        client.remove_event_handler(handle_edit_welcome_message)
+            if await add_group(group_id, group_name, group_username):
+                await new_event.reply(f"<b>✅ تم إضافة المجموعة {group_name} ({group_id}) بنجاح!</b>", parse_mode='html')
+            else:
+                await new_event.reply("<b>❌ فشل إضافة المجموعة.</b>", parse_mode='html')
+        except Exception as e:
+            await new_event.reply(f"<b>❌ خطأ: {e}</b>", parse_mode='html')
 
-@client.on(events.CallbackQuery(data=b'show_welcome_settings'))
-async def show_welcome_settings(event):
-    settings = await get_welcome_settings()
+        await user_panel(new_event)
+        client.remove_event_handler(handle_user_group_add)
 
-    status = "مفعل" if settings['enabled'] else "معطل"
+@client.on(events.CallbackQuery(data=b'user_remove_group'))
+async def user_remove_group_prompt(event):
+    await event.edit("<b>📤 إزالة مجموعة</b>\n\n<b>أرسل معرف أو رابط المجموعة التي تريد إزالتها:</b>", parse_mode='html')
+
+    @client.on(events.NewMessage(from_users=event.sender_id))
+    async def handle_user_group_remove(new_event):
+        text = new_event.text
+        try:
+            if text.startswith('https://t.me/'):
+                group = await client.get_entity(text)
+                group_id = group.id
+            else:
+                group_id = int(text)
+
+            if await remove_group(group_id):
+                await new_event.reply(f"<b>✅ تم إزالة المجموعة ({group_id}) بنجاح!</b>", parse_mode='html')
+            else:
+                await new_event.reply("<b>❌ فشل إزالة المجموعة.</b>", parse_mode='html')
+        except Exception as e:
+            await new_event.reply(f"<b>❌ خطأ: {e}</b>", parse_mode='html')
+
+        await user_panel(new_event)
+        client.remove_event_handler(handle_user_group_remove)
+
+@client.on(events.CallbackQuery(data=b'user_list_groups'))
+async def user_list_groups(event):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT group_id, group_name, group_username FROM groups WHERE is_active = 1')
+    groups = cursor.fetchall()
+    conn.close()
+
+    if not groups:
+        await event.edit("<b>❌ لا توجد مجموعات نشطة حاليًا.</b>", parse_mode='html')
+        return
+
+    groups_text = "<b>📋 قائمة المجموعات النشطة</b>\n\n"
+    for group in groups:
+        groups_text += f"<b>🏢 {group['group_name']} ({group['group_id']})</b>\n"
+        if group['group_username']:
+            groups_text += f"<b>🔗 @{group['group_username']}</b>\n"
+        groups_text += "\n"
+
+    buttons = [
+        [Button.inline("<b>⬅️ رجوع</b>", b'user_panel')]
+    ]
+
+    await event.edit(groups_text, buttons=buttons, parse_mode='html')
+
+@client.on(events.CallbackQuery(data=b'user_add_message'))
+async def user_add_message_prompt(event):
+    buttons = [
+        [Button.inline("<b>رسالة عادية</b>", b'user_regular_message')],
+        [Button.inline("<b>رسالة بريميوم</b>", b'user_premium_message')]
+    ]
+
     await event.edit(
-        f"اعدادات الترحيب:\n\n"
-        f"الحالة: {status}\n"
-        f"الرسالة: {settings['message']}",
-        buttons=[[Button.inline("رجوع", b'welcome_control')]]
+        "<b>💬 إضافة رسالة</b>\n\n"
+        "<b>اختر نوع الرسالة التي تريد إضافتها:</b>",
+        buttons=buttons,
+        parse_mode='html'
     )
+
+@client.on(events.CallbackQuery(data=b'user_regular_message'))
+async def user_add_regular_message(event):
+    await event.edit("<b>💬 إضافة رسالة عادية</b>\n\n<b>أرسل الرسالة التي تريد إضافتها:</b>", parse_mode='html')
+
+    @client.on(events.NewMessage(from_users=event.sender_id))
+    async def handle_user_regular_message(new_event):
+        text = new_event.text
+        if await add_message(text, is_premium=False):
+            await new_event.reply("<b>✅ تم إضافة الرسالة بنجاح!</b>", parse_mode='html')
+        else:
+            await new_event.reply("<b>❌ فشل إضافة الرسالة.</b>", parse_mode='html')
+
+        await user_panel(new_event)
+        client.remove_event_handler(handle_user_regular_message)
+
+@client.on(events.CallbackQuery(data=b'user_premium_message'))
+async def user_add_premium_message(event):
+    buttons = [
+        [Button.inline("<b>خط عادي</b>", b'user_font_normal')],
+        [Button.inline("<b>خط مونوسبيس</b>", b'user_font_monospace')],
+        [Button.inline("<b>خط سانز سيريف</b>", b'user_font_sans')]
+    ]
+
+    await event.edit(
+        "<b>💎 إضافة رسالة بريميوم</b>\n\n"
+        "<b>اختر نوع الخط للرسالة:</b>",
+        buttons=buttons,
+        parse_mode='html'
+    )
+
+@client.on(events.CallbackQuery(data=re.compile(b'user_font_(.*)')))
+async def handle_user_font_selection(event):
+    font = event.data_match.group(1).decode('utf-8')
+    await event.edit(f"<b>💎 إضافة رسالة بريميوم</b>\n\n<b>أرسل الرسالة التي تريد إضافتها بخط {font}:</b>", parse_mode='html')
+
+    @client.on(events.NewMessage(from_users=event.sender_id))
+    async def handle_user_premium_message(new_event):
+        text = new_event.text
+        if await add_message(text, is_premium=True, font=font):
+            await new_event.reply("<b>✅ تم إضافة الرسالة البريميوم بنجاح!</b>", parse_mode='html')
+        else:
+            await new_event.reply("<b>❌ فشل إضافة الرسالة.</b>", parse_mode='html')
+
+        await user_panel(new_event)
+        client.remove_event_handler(handle_user_premium_message)
+
+@client.on(events.CallbackQuery(data=b'auto_post'))
+async def auto_post_info(event):
+    await event.edit(
+        "<b>📢 النشر التلقائي</b>\n\n"
+        "<b>البوت يقوم بالنشر التلقائي في المجموعات المضافة كل 5-8 دقائق.</b>\n\n"
+        "<b>🔹 الميزات:</b>\n"
+        "<b>✔ نشر تلقائي متطور</b>\n"
+        "<b>✔ تخطي الباند والحظر</b>\n"
+        "<b>✔ حماية من الفلود</b>\n"
+        "<b>✔ رسائل متنوعة مع إيموجي وخطوط مختلفة</b>\n"
+        "<b>✔ حذف تلقائي للمجموعات المحظورة</b>\n\n"
+        "<b>لإضافة مجموعات للنشر التلقائي، استخدم لوحة التحكم.</b>",
+        parse_mode='html'
+    )
+
+@client.on(events.CallbackQuery(data=b'messages'))
+async def messages_info(event):
+    await event.edit(
+        "<b>💬 الرسائل</b>\n\n"
+        "<b>يمكنك إضافة رسائل للنشر التلقائي.</b>\n\n"
+        "<b>🔹 أنواع الرسائل:</b>\n"
+        "<b>✔ رسائل عادية</b>\n"
+        "<b>✔ رسائل بريميوم (مع خطوط وإيموجي متنوعة)</b>\n\n"
+        "<b>لإضافة رسائل، استخدم لوحة التحكم.</b>",
+        parse_mode='html'
+    )
+
+@client.on(events.CallbackQuery(data=b'vip'))
+async def vip_info(event):
+    user_id = event.sender_id
+    is_vip = await is_user_vip(user_id)
+
+    if is_vip:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT vip_expiry FROM users WHERE user_id = ?', (user_id,))
+        expiry = cursor.fetchone()['vip_expiry']
+        conn.close()
+
+        expiry_date = datetime.strptime(expiry, '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d %H:%M')
+
+        await event.edit(
+            "<b>👑 VIP</b>\n\n"
+            "<b>✅ لديك اشتراك VIP نشط!</b>\n\n"
+            f"<b>📅 انتهاء الاشتراك:</b> {expiry_date}\n\n"
+            "<b>🔹 مزايا VIP:</b>\n"
+            "<b>✔ الوصول إلى لوحة التحكم</b>\n"
+            "<b>✔ إضافة مجموعات غير محدودة</b>\n"
+            "<b>✔ رسائل بريميوم</b>\n"
+            "<b>✔ أولوية في الدعم</b>",
+            parse_mode='html'
+        )
+    else:
+        buttons = [
+            [Button.inline("<b>🎟 تفعيل VIP</b>", b'activate_vip')]
+        ]
+
+        await event.edit(
+            "<b>👑 VIP</b>\n\n"
+            "<b>للحصول على مزايا VIP، يمكنك تفعيل اشتراك VIP.</b>\n\n"
+            "<b>🔹 مزايا VIP:</b>\n"
+            "<b>✔ الوصول إلى لوحة التحكم</b>\n"
+            "<b>✔ إضافة مجموعات غير محدودة</b>\n"
+            "<b>✔ رسائل بريميوم</b>\n"
+            "<b>✔ أولوية في الدعم</b>\n\n"
+            "<b>للتفعيل، أرسل كود VIP إذا كان لديك أو اتصل بالدعم.</b>",
+            buttons=buttons,
+            parse_mode='html'
+        )
 
 @client.on(events.CallbackQuery(data=b'activate_vip'))
 async def activate_vip_prompt(event):
-    await event.edit("يرجى ارسال كود VIP لتفعيله")
+    await event.edit("<b>🎟 تفعيل VIP</b>\n\n<b>أرسل كود VIP الذي حصلت عليه:</b>", parse_mode='html')
 
     @client.on(events.NewMessage(from_users=event.sender_id))
     async def handle_vip_activation(new_event):
         code = new_event.text.strip()
         if await redeem_vip_code(new_event.sender_id, code):
-            await new_event.reply("تم تفعيل VIP بنجاح")
-            await main_panel(new_event)
+            await new_event.reply("<b>✅ تم تفعيل VIP بنجاح! يمكنك الآن استخدام جميع المزايا.</b>", parse_mode='html')
         else:
-            await new_event.reply("الكود غير صالح او مستخدم بالفعل")
+            await new_event.reply("<b>❌ الكود غير صالح أو مستخدم بالفعل.</b>", parse_mode='html')
 
+        await vip_info(new_event)
         client.remove_event_handler(handle_vip_activation)
 
 # Auto reply to mentions and replies
@@ -1172,27 +1480,36 @@ async def auto_reply(event):
     if event.is_private:
         return
 
-    settings = await get_auto_reply_settings()
-    if not settings['enabled']:
-        return
-
     if event.is_reply:
         reply_to = await event.get_reply_message()
-        if reply_to and reply_to.sender_id == (await client.get_me()).id:
-            await event.reply(settings['reply_reply'])
+        if reply_to.sender_id == (await client.get_me()).id:
+            await event.reply("<b>🤖 شكرًا لتواصلك معي!</b>", parse_mode='html')
 
     if f"@{client.me.username}" in event.text:
-        await event.reply(settings['mention_reply'])
+        await event.reply("<b>🤖 نعم، كيف يمكنني مساعدتك؟</b>", parse_mode='html')
 
 # Auto welcome in private
 @client.on(events.NewMessage(incoming=True, func=lambda e: e.is_private))
 async def auto_welcome(event):
+    user_id = event.sender_id
     if event.text == '/start':
         return
 
-    settings = await get_welcome_settings()
-    if settings['enabled']:
-        await event.reply(settings['message'])
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+    user_exists = cursor.fetchone() is not None
+    conn.close()
+
+    if not user_exists:
+        await start(event)
+    else:
+        await event.reply(
+            "<b>🤖 مرحبًا مجددًا!</b>\n\n"
+            "<b>يمكنك استخدام الأوامر التالية:</b>\n"
+            "<b>/start - عرض قائمة الأوامر</b>",
+            parse_mode='html'
+        )
 
 # Main function
 async def main():
