@@ -626,7 +626,6 @@ async def main_panel(event):
             ]
         )
         return
-
     # Register user if not exists
     conn = get_db_connection()
     cursor = conn.cursor()
