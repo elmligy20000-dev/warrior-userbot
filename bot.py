@@ -304,7 +304,7 @@ async def toggle_hack_commands_handler(event):
     user_id = event.sender_id
     new_status = toggle_hack_commands(user_id)
     status_text = "مفعل" if new_status else "معطل"
-    await event.edit(f"تم {'تفعيل' if new_status else 'تعطيل'} أوامر الاختراق.\n\n{🌿} الحالة الحالية: {status_text}")
+    await event.edit(f"تم {'تفعيل' if new_status else 'تعطيل'} أوامر الاختراق.\n\nالحالة الحالية: {status_text}")
 
 @telethon_client.on(events.CallbackQuery(data=b"show_sessions"))
 async def show_sessions(event):
