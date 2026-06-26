@@ -444,19 +444,18 @@ async def start(event):
         ]
 
         welcome_text = 
-text = f"{PLUS} أهلاً بيك في بوت النشر التلقائي المتطور الاحترافي</b>\n\n"
+f"{PLUS} أهلاً بيك في بوت النشر التلقائي المتطور الاحترافي</b>\n\n"
 
-text = f"{FOLDER}نشر تلقائي في المجموعات آمن جداً</b>\n"
+f"{FOLDER}نشر تلقائي في المجموعات آمن جداً</b>\n"
 
-text = f"{UNLOCK}حماية متقدمة عالية جداً ضد التجميد والفلود</b>\n"
+f"{UNLOCK}حماية متقدمة عالية جداً ضد التجميد والفلود</b>\n"
 
-text = f"{SETTINGS}جرب البوت مجاناً {FREE_TRIAL_DAYS} يوم</b>\n"
+f"{SETTINGS}جرب البوت مجاناً {FREE_TRIAL_DAYS} يوم</b>\n"
 
-text = f"{ID_CARD}او اختر باقة مدفوعة:</b>\n"
-text = f"{ID_CARD}نجوم تيليجرام</b>\n"
+f"{ID_CARD}او اختر باقة مدفوعة:</b>\n"
+f"{ID_CARD}نجوم تيليجرام</b>\n"
 
-text = f"{BRIEFCASE2}اختار وابدأ النشر الاحترافي</b>\n"
-
+f"{BRIEFCASE2}اختار وابدأ النشر الاحترافي</b>\n"
 """
         await event.reply(welcome_text, buttons=btns, parse_mode='html')
         return
