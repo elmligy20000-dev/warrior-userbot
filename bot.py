@@ -16,7 +16,7 @@ import aiohttp
 # ===== بيانات البوت =====
 API_ID = 20867472
 API_HASH = 'abedd7fb77eaf1f88bd3f286ea952253'
-BOT_TOKEN = '8297404281:AAHTXZA7L-Cu-23biUlF4dObxHvHMvamwuE'
+BOT_TOKEN = '8837648752:AAFB6JBi8YuJaY7KucPQZ_kbn_VNjtWmino'
 ADMIN_ID = 932862531
 DEVELOPER_USERNAME = 'Programmer_error'
 DEVELOPER_LINK = f'https://t.me/{DEVELOPER_USERNAME}'
