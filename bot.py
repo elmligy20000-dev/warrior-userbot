@@ -456,7 +456,7 @@ f"{ID_CARD}او اختر باقة مدفوعة:</b>\n"
 f"{ID_CARD}نجوم تيليجرام</b>\n"
 
 f"{BRIEFCASE2}اختار وابدأ النشر الاحترافي</b>\n"
-"""
+
         await event.reply(welcome_text, buttons=btns, parse_mode='html')
         return
 
