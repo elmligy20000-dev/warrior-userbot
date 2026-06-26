@@ -12,7 +12,6 @@ BOT_TOKEN = "8914045842:AAEz6MNsGTShwob_M3H0ECy8eOkl2nT5gno"
 ADMINS = 932862531
 
 # Emoji Premium
-💻 = "<tg-emoji emoji-id='5886664420502805908'>💻</tg-emoji>"
 🎲 = "<tg-emoji emoji-id='5886716969427672960'>🎲</tg-emoji>"
 🌿 = "<tg-emoji emoji-id='5886462183377739675'>🌿</tg-emoji>"
 👤 = "<tg-emoji emoji-id='5886695331382435915'>👤</tg-emoji>"
