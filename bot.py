@@ -9,8 +9,7 @@ import sqlite3
 API_ID = 20867472
 API_HASH = "abedd7fb77eaf1f88bd3f286ea952253"
 BOT_TOKEN = "8914045842:AAEz6MNsGTShwob_M3H0ECy8eOkl2nT5gno"
-ADMINS = 932862531
-
+ADMINS = [932862531]
 # Emoji Premium
 # Database setup
 conn = sqlite3.connect('bot_sessions.db')
