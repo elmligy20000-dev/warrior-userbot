@@ -1,7 +1,7 @@
 from telethon import TelegramClient, events, Button, types, functions
 from telethon.tl.types import MessageEntityCustomEmoji, MessageEntityBold, MessageEntityItalic, MessageEntityCode, MessageEntityPre, MessageEntityTextUrl, MessageEntityUrl, Channel, LabeledPrice
 from telethon.sessions import StringSession
-from telethon.errors import SessionPasswordNeededError, FloodWaitError, UserDeactivatedBanError, UserAlreadyParticipantError
+from telethon.errors import SessionPasswordNeededError, FloodWaitError, UserDeactivatedBanError, UserAlreadyParticipantError, DocumentInvalidError
 from telethon.tl.functions.channels import GetParticipantRequest, JoinChannelRequest
 from telethon.errors.rpcerrorlist import ChatWriteForbiddenError, ChatAdminRequiredError, UserBannedInChannelError, SlowModeWaitError, ChannelPrivateError, UserNotParticipantError, AuthKeyUnregisteredError, MessageNotModifiedError
 import asyncio
@@ -223,7 +223,7 @@ async def check_force_sub(uid):
         try:
             await bot.get_permissions(FORCE_SUB_CHANNEL, uid)
         except UserNotParticipantError:
-            not_joined.append(('قناة السورس', FORCE_SUB_CHANNEL))
+            not_joined.append(('قناة', FORCE_SUB_CHANNEL))
         except:
             pass
 
@@ -231,7 +231,7 @@ async def check_force_sub(uid):
         try:
             await bot.get_permissions(FORCE_SUB_GROUP, uid)
         except UserNotParticipantError:
-            not_joined.append(('جروب الدعم', FORCE_SUB_GROUP))
+            not_joined.append(('جروب', FORCE_SUB_GROUP))
         except:
             pass
 
@@ -345,15 +345,15 @@ def welcome_menu(uid):
         text += f"{SETTINGS} إعدادات متقدمة للنشر\n"
         text += f"{STORAGE} تخزين الرسائل والردود الذكية\n"
         text += f"{PARTY} مميزات VIP:\n"
-        text += f"{MEDAL2} عدد 5 حسابات داخل البوت\n"
+        text += f"{MEDAL2} عدد حسابات غير محدود\n"
         text += f"{COIN2} دعم فني مباشر\n"
         text += f"{DISCO} أولوية في التحديثات\n\n"
-        text += f"{LOCK} البوت مدفوع بكود تفعيل من المبرمج\n"
+        text += f"{LOCK} البوت مدفوع بكود تفعيل من المطور\n"
         text += f"{USER} للاشتراك في VIP أرسل كود التفعيل\n"
 
         btns = [
-            [Button.inline("تفعيل كود", b"activate_vip")],
-            [Button.url(f"المبرمج {DEVELOPER_USERNAME}", DEVELOPER_LINK)]
+            [Button.inline("تفعيل كود VIP", b"activate_vip")],
+            [Button.url(f"المطور {DEVELOPER_USERNAME}", DEVELOPER_LINK)]
         ]
         return text, btns
 
@@ -599,12 +599,21 @@ async def start(event):
         text, btns = welcome_menu(uid)
     else:
         text, btns = main_menu(uid)
-    await event.respond(text, buttons=btns, parse_mode='html')
+    try:
+        await event.respond(text, buttons=btns, parse_mode='html')
+    except DocumentInvalidError:
+        # Fallback to simple text if document error occurs
+        await event.respond(text.replace(DISCO, '').replace(COIN, '').replace(MEDAL, '').replace(USER, ''), buttons=btns)
 
 @bot.on(events.CallbackQuery)
 async def callback(event):
     uid = event.sender_id
-    data = event.data.decode()
+    try:
+        data = event.data.decode()
+    except DocumentInvalidError:
+        await event.answer("حدث خطأ في معالجة الطلب", alert=True)
+        return
+
     user = get_user_data(uid)
 
     await event.answer()
@@ -1972,6 +1981,11 @@ async def publish_loop(uid, account_id):
                     save_db()
                     await log_error(uid, f'{COIN} انتهت صلاحية الجلسة - احذف الحساب وأضفه مرة أخرى', account_id)
                     return
+                except DocumentInvalidError:
+                    # Skip this group if document error occurs
+                    error_details.append(f"{group}: خطأ في المستند")
+                    failed_count += 1
+                    continue
                 except Exception as e:
                     error_details.append(f"{group}: {str(e)[:40]}")
                     failed_count += 1
@@ -2099,10 +2113,15 @@ async def main():
     async with aiohttp.ClientSession() as session:
         await session.post(f'https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true')
 
-    await bot.start(bot_token=BOT_TOKEN)
-    me = await bot.get_me()
-    print(f"Bot Started Successfully... @{me.username}")
-    await bot.run_until_disconnected()
+    try:
+        await bot.start(bot_token=BOT_TOKEN)
+        me = await bot.get_me()
+        print(f"Bot Started Successfully... @{me.username}")
+        await bot.run_until_disconnected()
+    except DocumentInvalidError:
+        print("Error: Invalid document file. Please check your bot token and API credentials.")
+    except Exception as e:
+        print(f"Error starting bot: {str(e)}")
 
 if __name__ == '__main__':
     asyncio.run(main())
