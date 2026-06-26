@@ -320,7 +320,7 @@ def main_menu(uid):
         else: return "فارغ"
 
     btns = [
-        [Button.inline(f"تسجيل الحساب", b"account_info")],
+        [Button.inline(f"تسجيل الحساب", b"add_account")],
         [Button.inline(f"تسجيل الخروج", b"delete_account")],
 
         [Button.inline(f"رساله النشر 1 - {get_msg_status(msg1)}", b"msg1"), Button.inline(f"رساله النشر 2 - {get_msg_status(msg2)}", b"msg2")],
@@ -443,19 +443,20 @@ async def start(event):
             [Button.url(f"المبرمج", DEVELOPER_LINK)]
         ]
 
-        welcome_text = f"""
-<b>أهلاً بيك في بوت النشر التلقائي المتطور الاحترافي</b> 
+        welcome_text = 
+text = f"{PLUS} أهلاً بيك في بوت النشر التلقائي المتطور الاحترافي</b>\n\n"
 
-<b>نشر تلقائي في المجموعات آمن جداً</b>
+text = f"{FOLDER}نشر تلقائي في المجموعات آمن جداً</b>\n"
 
-<b>حماية متقدمة عالية جداً ضد التجميد والفلود</b>
+text = f"{UNLOCK}حماية متقدمة عالية جداً ضد التجميد والفلود</b>\n"
 
-<b>جرب البوت مجاناً {FREE_TRIAL_DAYS} يوم</b> 
+text = f"{SETTINGS}جرب البوت مجاناً {FREE_TRIAL_DAYS} يوم</b>\n"
 
-<b>او اختر باقة مدفوعة:</b>
-<b>نجوم تيليجرام</b>
+text = f"{ID_CARD}او اختر باقة مدفوعة:</b>\n"
+text = f"{ID_CARD}نجوم تيليجرام</b>\n"
 
-<b>اختار وابدأ النشر الاحترافي</b>
+text = f"{BRIEFCASE2}اختار وابدأ النشر الاحترافي</b>\n"
+
 """
         await event.reply(welcome_text, buttons=btns, parse_mode='html')
         return
@@ -465,11 +466,11 @@ async def start(event):
     acc = get_account_defaults(acc) if acc else None
     sent = acc['sent_count'] if acc else 0
 
-    text = f"{SPARK} <b>أهلاً بيك في بوت النشر المتطور الاحترافي</b> {GHOST}\n\n"
-    text += f"{BOLT} <b>الاشتراك: {days} يوم متبقي</b>\n"
-    text += f"{ROCKET} <b>الرسائل المرسله: {sent}</b>\n"
-    text += f"{SIGNAL} <b>النشر: {'يعمل' if acc and acc['active'] else 'متوقف'}</b>\n\n"
-    text += f"{USER} <b>كل حاجة في واجهة واحدة</b>"
+    text = f"{WRITING} <b>أهلاً بيك في بوت النشر المتطور الاحترافي</b> {GHOST}\n\n"
+    text += f"{ID_CARD} <b>الاشتراك: {days} يوم متبقي</b>\n"
+    text += f"{FOLDER} <b>الرسائل المرسله: {sent}</b>\n"
+    text += f"{UNLOCK} <b>النشر: {'يعمل' if acc and acc['active'] else 'متوقف'}</b>\n\n"
+    text += f"{PLUS} <b>كل حاجة في واجهة واحدة</b>"
 
     await event.respond(text, buttons=main_menu(uid), parse_mode='html')
 
@@ -1408,7 +1409,7 @@ async def handle_messages(event):
                 except:
                     pass
 
-            await event.reply(f"{SPARK} <b>تم اضافة الحساب بنجاح</b>\n\n{ROCKET} <code>{phone}</code>", parse_mode='html')
+            await event.reply(f"{BRIEFCASE2} <b>تم اضافة الحساب بنجاح</b>\n\n{ROCKET} <code>{phone}</code>", parse_mode='html')
             await start(event)
         except Exception as e:
             await event.reply(f"{BOLT} <b>كلمة المرور غلط</b>", parse_mode='html')
@@ -1471,14 +1472,14 @@ async def handle_messages(event):
             acc['groups'].append(group)
             user['account'] = acc
             save_db()
-            await event.reply(f"{SPARK} <b>تم اضافة:</b> {entity.title}\n{SIGNAL} <code>{group}</code>", parse_mode='html')
+            await event.reply(f"{UNLOCK} <b>تم اضافة:</b> {entity.title}\n{SIGNAL} <code>{group}</code>", parse_mode='html')
         except UserAlreadyParticipantError:
             acc['groups'].append(group)
             user['account'] = acc
             save_db()
-            await event.reply(f"{SPARK} <b>تم اضافة:</b> {group}\n{SIGNAL} الحساب كان عضو بالفعل", parse_mode='html')
+            await event.reply(f"{FOLDER} <b>تم اضافة:</b> {group}\n{SIGNAL} الحساب كان عضو بالفعل", parse_mode='html')
         except Exception as e:
-            await event.reply(f"{BOLT} <b>خطأ:</b> {str(e)[:100]}", parse_mode='html')
+            await event.reply(f"{PLUS} <b>خطأ:</b> {str(e)[:100]}", parse_mode='html')
         del waiting_for[uid]
         await start(event)
 
@@ -1494,11 +1495,11 @@ async def handle_messages(event):
                 removed = acc['groups'].pop(idx)
                 user['account'] = acc
                 save_db()
-                await event.reply(f"{SPARK} <b>تم حذف:</b> {removed}", parse_mode='html')
+                await event.reply(f"{SETTINGS} <b>تم حذف:</b> {removed}", parse_mode='html')
             else:
-                await event.reply(f"{BOLT} <b>رقم غلط</b>", parse_mode='html')
+                await event.reply(f"{BRIEFCASE2} <b>رقم غلط</b>", parse_mode='html')
         except:
-            await event.reply(f"{BOLT} <b>ابعت رقم صحيح</b>", parse_mode='html')
+            await event.reply(f"{UNLOCK} <b>ابعت رقم صحيح</b>", parse_mode='html')
         del waiting_for[uid]
         await start(event)
 
@@ -1506,10 +1507,10 @@ async def handle_messages(event):
         entities = extract_entities_from_message(event.message)
         if event.sticker:
             user['messages'][0] = {'text': '', 'entities': [], 'file_id': event.sticker.id, 'type': 'sticker'}
-            await event.reply(f'{SPARK} <b>تم حفظ الملصق كرسالة 1</b>', parse_mode='html')
+            await event.reply(f'{ID_CARD} <b>تم حفظ الملصق كرسالة 1</b>', parse_mode='html')
         else:
             user['messages'][0] = {'text': text, 'entities': entities, 'file_id': None, 'type': 'text'}
-            await event.reply(f'{SPARK} <b>تم حفظ الرسالة 1</b>', parse_mode='html')
+            await event.reply(f'{STORAGE} <b>تم حفظ الرسالة 1</b>', parse_mode='html')
         save_db()
         del waiting_for[uid]
         await start(event)
@@ -1518,10 +1519,10 @@ async def handle_messages(event):
         entities = extract_entities_from_message(event.message)
         if event.sticker:
             user['messages'][1] = {'text': '', 'entities': [], 'file_id': event.sticker.id, 'type': 'sticker'}
-            await event.reply(f'{SPARK} <b>تم حفظ الملصق كرسالة 2</b>', parse_mode='html')
+            await event.reply(f'{SETTINGS} <b>تم حفظ الملصق كرسالة 2</b>', parse_mode='html')
         else:
             user['messages'][1] = {'text': text, 'entities': entities, 'file_id': None, 'type': 'text'}
-            await event.reply(f'{SPARK} <b>تم حفظ الرسالة 2</b>', parse_mode='html')
+            await event.reply(f'{ID_CARD} <b>تم حفظ الرسالة 2</b>', parse_mode='html')
         save_db()
         del waiting_for[uid]
         await start(event)
@@ -1530,7 +1531,7 @@ async def handle_messages(event):
         user['publish_interval'] = text.strip()
         save_db()
         del waiting_for[uid]
-        await event.reply(f"{SPARK} <b>وقت النشر: كل {text.strip()} دقيقة</b>\n\n{SIGNAL} البوت هيبعت لكل الجروبات وبعدين يستنى ويعيد", parse_mode='html')
+        await event.reply(f"{BRIEFCASE2} <b>وقت النشر: كل {text.strip()} دقيقة</b>\n\n{SETTINGS} البوت هيبعت لكل الجروبات وبعدين يستنى ويعيد", parse_mode='html')
         await start(event)
 
     elif action == 'reply_msg':
@@ -1539,7 +1540,7 @@ async def handle_messages(event):
         user['auto_reply_entities'] = entities
         save_db()
         del waiting_for[uid]
-        await event.reply(f"{SPARK} <b>تم حفظ رسالة الرد التلقائي</b>", parse_mode='html')
+        await event.reply(f"{ID_CARD} <b>تم حفظ رسالة الرد التلقائي</b>", parse_mode='html')
         await start(event)
 
     elif action == 'welcome_msg':
@@ -1548,7 +1549,7 @@ async def handle_messages(event):
         user['welcome_entities'] = entities
         save_db()
         del waiting_for[uid]
-        await event.reply(f"{SPARK} <b>تم حفظ رسالة الترحيب</b>", parse_mode='html')
+        await event.reply(f"{ID_CARD} <b>تم حفظ رسالة الترحيب</b>", parse_mode='html')
         await start(event)
 
 async def check_payment_loop(invoice_id, uid, days, package_name):
@@ -1563,10 +1564,10 @@ async def check_payment_loop(invoice_id, uid, days, package_name):
                 del db['pending_crypto'][str(invoice_id)]
             save_db()
 
-            await bot.send_message(uid, f"{PLANET} <b>تم التفعيل تلقائي!</b> {SPARK}\n\n{USER} <b>الباقة:</b> {package_name}\n{ROCKET} <b>المدة:</b> {days} يوم\n{DICE} <b>ينتهي:</b> {datetime.fromisoformat(user['sub_end']).strftime('%Y-%m-%d')}\n\n{SIGNAL} <b>ارسل /start للبدء</b>", parse_mode='html')
+            await bot.send_message(uid, f"{BRIEFCASE2} <b>تم التفعيل تلقائي!</b> {ID_CARD}\n\n{USER} <b>الباقة:</b> {package_name}\n{UNLOCK} <b>المدة:</b> {days} يوم\n{STORAGE} <b>ينتهي:</b> {datetime.fromisoformat(user['sub_end']).strftime('%Y-%m-%d')}\n\n{SIGNAL} <b>ارسل /start للبدء</b>", parse_mode='html')
 
             try:
-                await bot.send_message(ADMIN_ID, f"{USER} <b>اشتراك كريبتو جديد تلقائي</b>\n\n{ROCKET} المستخدم: <code>{uid}</code>\n{DICE} الباقة: {package_name}\n{PC} المبلغ: ${invoice['amount']}\n{SPARK} الفاتورة: <code>{invoice_id}</code>", parse_mode='html')
+                await bot.send_message(ADMIN_ID, f"{USER} <b>اشتراك كريبتو جديد تلقائي</b>\n\n{ROCKET} المستخدم: <code>{uid}</code>\n{SETTINGS} الباقة: {package_name}\n{ID_CARD} المبلغ: ${invoice['amount']}\n{ID_CARD} الفاتورة: <code>{invoice_id}</code>", parse_mode='html')
             except:
                 pass
             return
@@ -1575,7 +1576,7 @@ async def publish_loop(uid):
     user = get_user_data(uid)
     acc = get_account(uid)
     if not acc:
-        await log_error(uid, f'{BOLT} لا يوجد حساب')
+        await log_error(uid, f'{BRIEFCASE2} لا يوجد حساب')
         return
     acc = get_account_defaults(acc)
     key = str(uid)
@@ -1589,24 +1590,24 @@ async def publish_loop(uid):
             acc['last_error'] = 'انتهت صلاحية الجلسة'
             user['account'] = acc
             save_db()
-            await log_error(uid, f'{BOLT} انتهت صلاحية الجلسة - احذف الحساب وضيفه من جديد')
+            await log_error(uid, f'{UNLOCK} انتهت صلاحية الجلسة - احذف الحساب وضيفه من جديد')
             return
 
-        await log_error(uid, f'{SPARK} بدأ النشر - عدد الجروبات: {len(acc["groups"])}')
+        await log_error(uid, f'{PLUS} بدأ النشر - عدد الجروبات: {len(acc["groups"])}')
         stealth = STEALTH_MODES[user['stealth_mode']]
         msg_index = 0
 
         while acc['active'] and is_subscribed(uid):
             msgs = user['messages']
             if not acc['groups']:
-                await log_error(uid, f'{BOLT} قائمة الجروبات فاضية - اعمل جلب الجروبات')
+                await log_error(uid, f'{WRITING} قائمة الجروبات فاضية - اعمل جلب الجروبات')
                 acc['active'] = False
                 user['account'] = acc
                 save_db()
                 return
 
             if not msgs[0]['text'] and not msgs[0]['file_id']:
-                await log_error(uid, f'{BOLT} مفيش رسالة 1 - ضيف رسالة 1')
+                await log_error(uid, f'{PLUS} مفيش رسالة 1 - ضيف رسالة 1')
                 acc['active'] = False
                 user['account'] = acc
                 save_db()
@@ -1663,9 +1664,9 @@ async def publish_loop(uid):
 
                     delay = random.randint(*stealth['group_delay'])
                     if user['flood_protection'] >= 2:
-                        delay += random.randint(5, 15)
-                    if user['flood_protection'] == 3:
-                        delay += random.randint(15, 30)
+                        delay += random.randint(8, 15)
+                    if user['flood_protection'] == 5:
+                        delay += random.randint(20, 35)
 
                     await asyncio.sleep(delay)
 
@@ -1679,21 +1680,21 @@ async def publish_loop(uid):
                     acc['last_error'] = f'فلود {e.seconds}ث'
                     user['account'] = acc
                     save_db()
-                    await log_error(uid, f'{BOLT} فلود وايت {e.seconds} ثانية - بستنى')
+                    await log_error(uid, f'{WRITING} فلود وايت {e.seconds} ثانية - بستنى')
                     await asyncio.sleep(e.seconds + 60)
                 except UserDeactivatedBanError:
                     acc['active'] = False
                     acc['last_error'] = 'الحساب محظور من تيليجرام'
                     user['account'] = acc
                     save_db()
-                    await log_error(uid, f'{BOLT} الحساب محظور من تيليجرام نهائيا')
+                    await log_error(uid, f'{ID_CARD} الحساب محظور من تيليجرام نهائيا')
                     return
                 except AuthKeyUnregisteredError:
                     acc['active'] = False
                     acc['last_error'] = 'انتهت صلاحية الجلسة'
                     user['account'] = acc
                     save_db()
-                    await log_error(uid, f'{BOLT} انتهت صلاحية الجلسة - احذف الحساب وضيفه من جديد')
+                    await log_error(uid, f'{BRIEFCASE2} انتهت صلاحية الجلسة - احذف الحساب وضيفه من جديد')
                     return
                 except Exception as e:
                     error_details.append(f"{group}: {str(e)[:40]}")
@@ -1714,11 +1715,6 @@ async def publish_loop(uid):
                 user['account'] = acc
                 save_db()
                 return
-            else:
-                # التصليح: وقت عشوائي 5-10 او ثابت
-                interval = parse_interval(user['publish_interval'])
-                await log_error(uid, f'{SPARK} خلصت دورة النشر - هستنى {interval} دقيقة')
-                await asyncio.sleep(interval * 60)
 
     except asyncio.CancelledError:
         await log_error(uid, f'{BOLT} تم ايقاف النشر')
@@ -1727,7 +1723,7 @@ async def publish_loop(uid):
         acc['last_error'] = str(e)[:100]
         user['account'] = acc
         save_db()
-        await log_error(uid, f'{BOLT} خطأ عام في النشر: {type(e).__name__}: {str(e)[:100]}')
+        await log_error(uid, f'{BRIEFCASE2} خطأ عام في النشر: {type(e).__name__}: {str(e)[:100]}')
     finally:
         try:
             await client.disconnect()
