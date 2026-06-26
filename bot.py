@@ -53,6 +53,8 @@ UNLOCK = '<b><tg-emoji emoji-id="5886403208292071170">🔓</tg-emoji></b>'
 FOLDER = '<b><tg-emoji emoji-id="5886403208292071172">📁</tg-emoji></b>'
 SETTINGS = '<b><tg-emoji emoji-id="5886403208292071174">⚙️</tg-emoji></b>'
 STORAGE = '<b><tg-emoji emoji-id="5886403208292071176">🗃️</tg-emoji></b>'
+PLUS = '<b><tg-emoji emoji-id="5886403208292071178">➕</tg-emoji></b>'
+WRITING = '<b><tg-emoji emoji-id="5886403208292071180">✍️</tg-emoji></b>'
 
 bot = TelegramClient('bot', API_ID, API_HASH)
 db = {'users': {}, 'codes': {}, 'stats': {'total_sent': 0}, 'login_notifications': True, 'pending_crypto': {}}
@@ -60,6 +62,7 @@ waiting_for = {}
 active_clients = {}
 running_tasks = {}
 user_clients = {}
+typing_status = {}
 
 STEALTH_MODES = {
     'fast': {'group_delay': [1, 3], 'name': 'سريع'},
@@ -227,6 +230,22 @@ async def check_force_sub(uid):
             pass
 
     return len(not_joined) == 0, not_joined
+
+async def show_force_sub_menu(event, not_joined):
+    text = f"{COIN} <b>عشان تستخدم البوت لازم تشترك هنا:</b>\n\n"
+    btns = []
+    for typ, link in not_joined:
+        text += f"{MEDAL} {typ}: {link}\n"
+        btns.append([Button.url(f"اشترك في {typ}", f"https://t.me/{link.replace('@', '')}")])
+    btns.append([Button.inline(f"تحققت", b"check_sub")])
+    await event.respond(text, buttons=btns, parse_mode='html')
+
+async def show_required_channels_menu(event):
+    btns = [
+        [Button.url(f"اشترك هنا اولا", f"https://t.me/{REQUIRED_CHANNELS[0]}")],
+        [Button.inline(f"تحققت", b"check_sub")]
+    ]
+    await event.respond(f"{DISCO} <b>اشترك في القناة اولا</b>", buttons=btns, parse_mode='html')
 
 def get_account(uid, account_id=None):
     user = get_user_data(uid)
@@ -432,7 +451,7 @@ def admin_menu():
         [Button.inline(f"رجوع", b"back_main")]
     ]
 
-async def get_user_client(uid, account_id):
+async def get_user_client(uid, account_id, show_typing=False):
     user = get_user_data(uid)
     if account_id not in user['accounts']:
         return None
@@ -446,6 +465,8 @@ async def get_user_client(uid, account_id):
     if key in user_clients:
         try:
             if user_clients[key].is_connected():
+                if show_typing:
+                    await start_typing_simulation(uid, account_id)
                 return user_clients[key]
             else:
                 await user_clients[key].disconnect()
@@ -463,10 +484,42 @@ async def get_user_client(uid, account_id):
         if not await client.is_user_authorized():
             await client.disconnect()
             return None
+
+        if show_typing:
+            await start_typing_simulation(uid, account_id)
+
         user_clients[key] = client
         return client
     except:
         return None
+
+async def start_typing_simulation(uid, account_id):
+    key = f"{uid}_{account_id}"
+    if key in typing_status and typing_status[key]:
+        return
+
+    typing_status[key] = True
+    client = await get_user_client(uid, account_id)
+    if not client:
+        typing_status[key] = False
+        return
+
+    try:
+        while typing_status[key]:
+            await asyncio.sleep(3)
+            if key in typing_status and typing_status[key]:
+                await client(functions.messages.SetTypingRequest(
+                    peer=await client.get_input_entity('me'),
+                    action=types.SendMessageTypingAction()
+                ))
+    except:
+        pass
+    finally:
+        typing_status[key] = False
+
+async def stop_typing_simulation(uid, account_id):
+    key = f"{uid}_{account_id}"
+    typing_status[key] = False
 
 async def log_error(uid, error_text, account_id=None):
     try:
@@ -495,24 +548,14 @@ async def start(event):
 
     is_sub, not_joined = await check_force_sub(uid)
     if not is_sub:
-        text = f"{COIN} <b>عشان تستخدم البوت لازم تشترك هنا:</b>\n\n"
-        btns = []
-        for typ, link in not_joined:
-            text += f"{MEDAL} {typ}: {link}\n"
-            btns.append([Button.url(f"اشترك في {typ}", f"https://t.me/{link.replace('@', '')}")])
-        btns.append([Button.inline(f"تحققت", b"check_sub")])
-        await event.reply(text, buttons=btns, parse_mode='html')
+        await show_force_sub_menu(event, not_joined)
         return
 
     for channel in REQUIRED_CHANNELS:
         try:
             await bot(GetParticipantRequest(channel, uid))
         except:
-            btns = [
-                [Button.url(f"اشترك هنا اولا", f"https://t.me/{channel}")],
-                [Button.inline(f"تحققت", b"check_sub")]
-            ]
-            await event.reply(f"{DISCO} <b>اشترك في القناة اولا</b>", buttons=btns, parse_mode='html')
+            await show_required_channels_menu(event)
             return
 
     text, btns = main_menu(uid)
@@ -532,7 +575,20 @@ async def callback(event):
         return
 
     elif data == 'check_sub':
-        await start(event)
+        is_sub, not_joined = await check_force_sub(uid)
+        if not is_sub:
+            await show_force_sub_menu(event, not_joined)
+            return
+
+        for channel in REQUIRED_CHANNELS:
+            try:
+                await bot(GetParticipantRequest(channel, uid))
+            except:
+                await show_required_channels_menu(event)
+                return
+
+        text, btns = main_menu(uid)
+        await safe_edit(event, text, buttons=btns)
         return
 
     elif data.startswith('account_menu_'):
@@ -780,6 +836,7 @@ async def callback(event):
                     except:
                         pass
                     del running_tasks[key]
+                await stop_typing_simulation(uid, account_id)
                 await event.answer("تم إيقاف النشر", alert=True)
                 await log_error(uid, f'{COIN} تم إيقاف النشر يدوياً', account_id)
 
@@ -883,6 +940,9 @@ async def callback(event):
                 except:
                     pass
                 del running_tasks[key]
+
+            if key in typing_status:
+                typing_status[key] = False
 
             del user['accounts'][account_id]
             save_db()
@@ -1472,7 +1532,7 @@ async def publish_loop(uid, account_id):
         return
 
     key = f"{uid}_{account_id}"
-    client = await get_user_client(uid, account_id)
+    client = await get_user_client(uid, account_id, show_typing=True)
 
     if not client:
         acc['active'] = False
@@ -1557,6 +1617,13 @@ async def publish_loop(uid, account_id):
                         groups_to_remove.append(group)
                         failed_count += 1
                         continue
+
+                    # Simulate typing before sending message
+                    await client(functions.messages.SetTypingRequest(
+                        peer=chat,
+                        action=types.SendMessageTypingAction()
+                    ))
+                    await asyncio.sleep(random.uniform(1, 3))
 
                     if msg_data['type'] == 'sticker' and msg_data['file_id']:
                         await client.send_file(chat, msg_data['file_id'])
@@ -1645,6 +1712,7 @@ async def publish_loop(uid, account_id):
         save_db()
         await log_error(uid, f'{COIN} خطأ عام في النشر: {type(e).__name__}: {str(e)[:100]}', account_id)
     finally:
+        await stop_typing_simulation(uid, account_id)
         try:
             await client.disconnect()
         except:
