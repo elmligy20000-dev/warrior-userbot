@@ -29,7 +29,7 @@ FORCE_SUB_CHANNEL = "@Programmer_error1"
 FORCE_SUB_GROUP = "@Programmer_error2"
 DB_FILE = 'database.json'
 BACKUP_FILE = 'sessions_backup.json'
-FREE_TRIAL_DAYS = 0
+FREE_TRIAL_DAYS = 5
 GROUP_DELAY = 30 # 5 ثواني بين كل جروب زي ما طلبت
 MESSAGE_DELAY = 60 # 3 ثواني بين الرسالتين
 
