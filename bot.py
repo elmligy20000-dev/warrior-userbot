@@ -442,19 +442,23 @@ async def start(event):
             [Button.inline(f"المميزات", b"features")],
             [Button.url(f"المبرمج", DEVELOPER_LINK)]
         ]
-        welcome_text = f"""
-{PLUS} <b>أهلاً بيك في بوت النشر المتطور الاحترافي</b> {SETTINGS}
+  
+    welcome_text = f"""
+    ```python
+<b>أهلاً بيك في بوت النشر المتطور الاحترافي</b>
 
-{WRITING} <b>نشر تلقائي في المجموعات آمن جداً</b> {SETTINGS}
+<b>نشر تلقائي في المجموعات آمن جداً</b>
 
-{STORAGE} <b>حماية متقدمة عالية جداً ضد التجميد والفلود</b> {SETTINGS}
+<b>حماية متقدمة عالية جداً ضد التجميد والفلود</b>
 
-{FOLDER} <b>جرب البوت مجاناً {FREE_TRIAL_DAYS} يوم</b> {SETTINGS}
+<b>جرب البوت مجاناً {FREE_TRIAL_DAYS} يوم</b>
 
-{ID_CARD} <b>او اختر باقة مدفوعة بنجوم او راسل المبرمج لشراء اشتراك</b> {SETTINGS}
+<b>او اختر باقة مدفوعة بنجوم او راسل المبرمج لشراء اشتراك</b>
 
-{UNLOCK} <b>اختار وابدأ النشر الاحترافي</b> {SETTINGS}
+<b>اختار وابدأ النشر الاحترافي</b>
+```
 """
+
         await event.reply(welcome_text, buttons=btns, parse_mode='html')
         return
 
@@ -498,7 +502,7 @@ async def callback(event):
         save_db()
 
         await event.answer(f"تم تفعيل التجربة المجانية", alert=True)
-        await safe_edit(event, f"{SPARK} <b>مبروك! حصلت على تجربة مجانية {FREE_TRIAL_DAYS} يوم</b> {PLANET}\n\n{BOLT} <b>تقدر تبدأ النشر دلوقتي</b>", buttons=[[Button.inline(f"ابدأ النشر", b"back_main")]])
+        await safe_edit(event, f"{WRITING} <b>مبروك! حصلت على تجربة مجانية {FREE_TRIAL_DAYS} يوم</b> {STORAGE}\n\n{WRITING} <b>تقدر تبدأ النشر دلوقتي</b>", buttons=[[Button.inline(f"ابدأ النشر", b"back_main")]])
 
         try:
             await bot.send_message(ADMIN_ID, f"{CAT} <b>تجربة مجانية جديدة</b>\n\n{USER} المستخدم: <code>{uid}</code>\n{SIGNAL} الوقت: {datetime.now().strftime('%Y-%m-%d %H:%M')}", parse_mode='html')
@@ -508,7 +512,7 @@ async def callback(event):
 
     elif data == 'login_session':
         waiting_for[uid] = 'session_login'
-        await safe_edit(event, f"{PC}<b>ابعت جلسة السيشن StringSession:</b>\n\n{PC} مثال: 1BQAJ... طويلة\n{PC} لو مو معك سيشن راسل المبرمج @Programmer_error", buttons=[[Button.inline(f"رجوع", b"back_main")]])
+        await safe_edit(event, f"{PLUS}<b>ابعت جلسة السيشن StringSession:</b>\n\n{PC} مثال: 1BQAJ... طويلة\n{SETTINGS} لو مو معك سيشن راسل المبرمج @Programmer_error", buttons=[[Button.inline(f"رجوع", b"back_main")]])
 
     # المنيو الرئيسي
     elif data == 'main_menu':
@@ -584,12 +588,12 @@ async def callback(event):
 
     elif data == 'msg1':
         waiting_for[uid] = 'msg1'
-        await safe_edit(event, f"{SIGNAL} <b>ابعت الرسالة الاولى:</b>\n\n{BOLT} تقدر تبعت نص مع ايموجي بريميوم او ملصق\n{SPARK} البوت هيحفظه وينشره", buttons=[[Button.inline(f"رجوع", b"back_main")]])
+        await safe_edit(event, f"{FOLDER} <b>ابعت الرسالة الاولى:</b>\n\n{STORAGE} تقدر تبعت نص مع ايموجي بريميوم او ملصق\n{UNLOCK} البوت هيحفظه وينشره", buttons=[[Button.inline(f"رجوع", b"back_main")]])
         return
 
     elif data == 'msg2':
         waiting_for[uid] = 'msg2'
-        await safe_edit(event, f"{SIGNAL} <b>ابعت الرسالة التانية:</b>\n\n{BOLT} تقدر تبعت نص مع ايموجي بريميوم او ملصق\n{SPARK} البوت هيبدل بينهم تلقائي", buttons=[[Button.inline(f"رجوع", b"back_main")]])
+        await safe_edit(event, f"{FOLDER} <b>ابعت الرسالة التانية:</b>\n\n{STORAGE} تقدر تبعت نص مع ايموجي بريميوم او ملصق\n{UNLOCK} البوت هيبدل بينهم تلقائي", buttons=[[Button.inline(f"رجوع", b"back_main")]])
         return
 
     elif data == 'toggle_reply':
@@ -1503,10 +1507,10 @@ async def handle_messages(event):
         entities = extract_entities_from_message(event.message)
         if event.sticker:
             user['messages'][0] = {'text': '', 'entities': [], 'file_id': event.sticker.id, 'type': 'sticker'}
-            await event.reply(f'{ID_CARD} <b>تم حفظ الملصق كرسالة 1</b>', parse_mode='html')
+            await event.reply(f'{SETTINGS} <b>تم حفظ الملصق كرسالة 1</b>', parse_mode='html')
         else:
             user['messages'][0] = {'text': text, 'entities': entities, 'file_id': None, 'type': 'text'}
-            await event.reply(f'{STORAGE} <b>تم حفظ الرسالة 1</b>', parse_mode='html')
+            await event.reply(f'{ID_CARD} <b>تم حفظ الرسالة 1</b>', parse_mode='html')
         save_db()
         del waiting_for[uid]
         await start(event)
