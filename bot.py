@@ -448,9 +448,6 @@ async def start(event):
     text += f"{UNLOCK} <b>النشر: {'يعمل' if acc and acc['active'] else 'متوقف'}</b>\n\n"
     text += f"{PLUS} <b>كل شيئ في واجهة واحدة</b>"
 
-        await event.reply(buttons=btns, parse_mode='html')
-        return
-
     days = get_remaining_days(uid)
     acc = get_account(uid)
     acc = get_account_defaults(acc) if acc else None
